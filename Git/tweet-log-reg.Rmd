@@ -1,0 +1,188 @@
+---
+title: "Tweet Classification Exploration"
+author: "IDIS-150-02 Considering the Evidence"
+date: "1/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(mosaic)   # Load additional packages here require(ggformula)
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+theme_set(theme_bw(base_size=18))
+knitr::opts_chunk$set(
+  tidy=FALSE,     # display code as typed
+  size="footnotesize",   # slightly smaller font for code
+  fig.width=3.5, fig.height=2, fig.show='hold')
+```
+
+## Data Source
+For this exercise, you will get a dataset containing a number of Tweets related to a disaster event and attempt a classification analysis. You may choose to pursue one of the two goals below:
+
+- Predict whether each tweet is "Related and informative" using variable `Informativeness`
+- Predict whether each tweet contain information about "Infrastructure and utilities" using variable `Information.Type`; this is harder, because a smaller proportion of the tweets are in this category.
+
+## Getting Data
+Go to the web site: <http://crisislex.org/tweet-collections.html> and download the zipped folder ``CrisisLexT26-v1.0".
+
+Unzip the file on your computer and choose just one file that you want to upload, using the detailed instructions below.
+
+The main zip file contains a number of folders, one for each of 26 crisis/disaster events.  Choose one dataset that is of interest to you; at <http://crisislex.org/tweet-collections.html> there is a table giving a bit more information about each crisis that may help you pick.
+
+Upload to RStudio the labelled tweet file from the folder of your choice: its' the one with a name ending in "_labeled.csv".
+
+
+## Read in your data file
+After uploading your data file to RStudio, make sure you have also uploaded this file to the same location.
+
+Then you can read in the data with code like:
+
+```{r}
+bushfire <- read.csv('2013_Australia_bushfire-tweets_labeled.csv')
+```
+
+Remember to change the exact file name to match the file you chose.
+
+In the dataset, the column `Tweet.Text` is the actual full text of each tweet.  We need to transform this text into "features" that we can use as possible predictor variables in a logistic regression model using text mining techniques.
+
+## Unigram Feature Vector 
+
+One common approach is to create a "unigram feature vector". This means there will be a variable in the dataset for every word present in the tweets. For each row (tweet), the value of the variable will be 0 if the word does not appear, 1 if it appears once, etc. Obviously we will not be able to use `all` the words - we may choose certain ones, or a relatively small number of the most common ones.
+
+To do this, we will use the R package `tm`.  First, we have to turn our vector of tweets into a "Corpus" object (this is the type of object that the `tm` package knows how to process).  We will also convert all text to lower case, remove punctuation, and remove "stopwords" (words we won't care about like "the").
+
+```{r}
+require(tm)
+tweetCorpus <- Corpus(VectorSource(bushfire$Tweet.Text))
+# make each letter lowercase
+tweetCorpus <- tm_map(tweetCorpus, tolower) 
+# remove punctuation
+tweetCorpus <- tm_map(tweetCorpus, removePunctuation)
+# remove stopwords
+tweetCorpus <- tm_map(tweetCorpus,removeWords,stopwords('english'))
+```
+
+Hint: if your data set is not called `bushfire`, you will have to change the name to the name you used.
+
+## Document - Term Matrix
+Next, we create something called a Document-Term matrix - it will have one row for every word present in the tweet dataset, and one column for each tweet in the dataset. We will exclude words that are one or two letters long.
+
+```{r}
+tweetDTm <- DocumentTermMatrix(tweetCorpus, 
+                               control = list(wordLengths = c(3,Inf)))
+```
+
+The Document-Term matrix is *not* in the standard R `data.frame` format we are used to, but we can still have a look at its format and contents:
+
+```{r}
+glimpse(tweetDTm)
+```
+
+## Most Common Words
+What are the most common words in your tweets? The code below will print out the words that appear at least 50 times.
+
+```{r}
+findFreqTerms(tweetDTm, lowfreq=50)
+```
+
+That gives us an idea of which words appear most often, but we need to get the data into a form we can attach to our original dataset...
+
+We definitely also want to eliminate from the document-term matrix really rare words - otherwise the size of our dataset is going to be too big to work with. (My example above has over 4000 terms - and we probably do not want to weed through 4000+ potential predictor variables.) In the code below, tweak the number given after input `sparse` so that your new document-term matrix contains something less than about 50 or so "terms" (words). Smaller values of `sparse` keep fewer words.
+
+```{r}
+smallTweetDTm <- removeSparseTerms(tweetDTm, sparse=0.97)
+inspect(smallTweetDTm)
+```
+
+Now, we want to covert this DTm object to a normal dataset (`data.frame` in R).
+
+```{r}
+tweetWords<- as.data.frame(as.matrix(smallTweetDTm))
+```
+
+We can look at the variable names to see what words are included. These will be potential predictor variables for our model.
+
+```{r}
+names(tweetWords)
+glimpse(tweetWords)
+```
+
+## Combining with original data
+Finally, we can add these columns to our original dataset. The column names (variable names) are the words from the tweets, and the values are the number of times the word appears in each tweet.
+
+```{r}
+bushfire <- cbind(bushfire, tweetWords)
+head(bushfire)
+```
+
+Let's add just one more possible predictor variable to our dataset -- the number of words in the tweet, counting only the words that are included in our small Document-Term matrix.
+
+```{r}
+bushfire <- bushfire %>%
+  mutate(WordCount = rowSums(tweetWords))
+```
+
+If you wanted, you could also include the word count of the full tweets (excluding the deleted stopwords):
+
+```{r}
+bushfire <- bushfire %>%
+  mutate(WordCount2 = rowSums(as.matrix(tweetDTm)))
+glimpse(bushfire)
+```
+
+## Fitting a Model
+We will fit a logistic regression model for the response variable `Informativeness`.
+
+### Before you start: Response variable
+You will probably want to create a new response variable in your dataset that has values 'No' and 'Yes', for example if you choose the task of predicting whether the tweet is "Related and informative" you might do:
+
+```{r}
+bushfire <- bushfire %>%
+  mutate(Informativeness = ifelse(Informativeness=='Related and informative',
+                              'Yes', 'No'),
+         Informativeness = factor(Informativeness))
+```
+
+## Training and Testing
+We want to reserve some of our data to use later, to test how good our model is at making predictions. So we will use half to fit the model ("training" data), and half later for testing.
+
+```{r}
+nrow(bushfire)/2
+```
+```{r}
+train_data <- slice(bushfire, 1:600)
+test_data <- slice(bushfire, 601:n())
+```
+
+## Fitting a model
+
+The initial example below shows the format to use, but you will have to choose which predictors you want to use in your model.
+
+```{r}
+my_model <- glm(Informativeness ~ WordCount + emergency, data = train_data, family = binomial(link = "logit"))
+```
+
+
+## Making Predictions
+We can predict the probability of the tweets in `test_data` being informative by:
+
+```{r}
+predict(my_model, newdata = test_data)
+```
+
+What is the problem with this output -- why will it be hard to compare with the ground-truth?
+
+Once we have the right predictions, we will want to put them into the main dataset:
+
+```{r}
+test_data <- test_data %>%
+  mutate(predicted = round(predict(my_model, newdata = test_data, type = 'response')))
+```
+
+## Assessing Performance
+How well did your model do at predicting whether tweets were Informative?
+
+```{r}
+tally(~ Informativeness | predicted, 
+      data = test_data)
+```
+

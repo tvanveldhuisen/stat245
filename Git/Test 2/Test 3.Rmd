@@ -1,0 +1,103 @@
+---
+title: "Test 3"
+author: "Trevor VanVeldhuisen"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+require(glmmTMB)
+require(s245)
+require(DHARMa)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+1. DATA
+```{r}
+birds <- read_csv('https://sldr.netlify.app/data/seabird-mercury.csv') 
+  glimpse(birds)
+```
+```{r}
+birds <- birds %>%
+  arrange(bird_ID)
+```
+
+
+The specific research question I am going to answer is if mercury levels are associated with the success of breeding in grey-headed albatrosses near Antarctica. I am going to answer this question by fitting a binary regression model since the outcome of interest here is binary.
+The model plan includes the response variable: breeding success and the following set of predictors: total_mercury, breeding_history, age, foraging_habitat, trophic_level, sex. Total Mercury is the main predictor variable that we want to see if it has an association with breeding success. However, I included the rest of the variables that describe features of the albatrosses to see if these other factors might also be associated with breeding, as total mercury may not be the only factor and others may provide insight as to the impact of breeding success. After model fitting, the breeding history predictor provided peculiar estimates. Since it was not part of the primary question, I decided to remove breeding history from the model.
+
+I extended the original model by adding Bird_ID to the model as a random effect variable. 
+
+```{r}
+birds <- birds %>%
+  mutate(breeding = factor(breeding),
+         breeding_history = factor(breeding_history))
+```
+
+2. RATIONALE
+The random effect chosen is Bird ID. This is because the data are dependent on the specific bird, so to account for the dependence we use a random effect based on each bird.
+
+3. FITTING
+With Random Effect
+```{r}
+birds.logrRE <- glmmTMB(factor(breeding) ~ total_mercury + foraging_habitat + trophic_level + age + sex + (1|bird_ID), 
+                  data = birds,
+                  family = binomial(link='logit'))
+```
+
+Without Random Effect
+```{r}
+birds.logr <- glm(factor(breeding) ~ total_mercury + foraging_habitat + trophic_level + age + sex, 
+                  data = birds,
+                  family = binomial(link='logit'))
+```
+
+
+4. SUMMARY
+```{r}
+summary(birds.logrRE)
+```
+
+ Model Equation: -8.596 - 0.047total_mercury + 0.189foraging_habitat + 0.075trophic_level - 0.056age + 0.887sexM + Erfbird_ID + Eresid
+ Variance Estimate is 3273 which is the estimate of variance explained by having the same birds for multiple observations in the model. From the output, we see that we have 78 unique birds that contribute 229 total observations. 
+ 
+
+5. ASSESSMENT
+Without Random Effect
+```{r}
+gf_acf(~birds.logr)
+```
+With Random Effect
+```{r}
+gf_acf(~birds.logrRE)
+```
+Looking at these two ACF tests, the conditions are not met as the there are some residuals that exceed beyond the confidence bounds, and also seems to have patterns or trends to the residuals rather than having them be randomly displayed. The residual ACF plot from the random effects model looked very similar to the model without the random effect. 
+ 
+6. PREDICTIONS
+ For this model, it would be better to make population type predictions due tot he use of a random effects model and this allows us to generalize the results of the analysis data to all grey-headed albatrosses in Antarctica, and not just the birds that were included in the analysis. For this data set specifically, when looking at the random effects model, none of the predictors are associated with the outcome of success of breeding in grey-headed albatrosses near Antarctica, including mercury level (p=0.78), which was the primary research question we were intending to answer. 
+ 
+7. EXTRA CREDIT
+The pros of having these tests is seeing how we can apply what we learned in class to a research without time restrictions. Especially when writing code and analyzing, it takes more time than one would think. It was nice to be able to use resources as the coding on top of the material was a lot to take in at once. 
+Some cons of these style tests are that you feel like you do not need to study as much for this class, and most things are in the notes but not in memory. It is more about applying what we learned rather than memorizing facts (which I respond to better but still could be a con for others).

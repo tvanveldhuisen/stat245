@@ -1,0 +1,99 @@
+---
+title: "Indiana FSSA Analysis"
+author: "Trevor VanVeldhuisen"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+<!-- Put your work below here.  Put text in text chunks, code in R chunks. -->
+
+```{r}
+in_fssa <- read_csv('https://sldr.netlify.app/data/indiana_fssa.csv')
+ 
+```
+```{r}
+ glimpse(in_fssa)
+```
+
+```{r}
+gf_point(TANF_cases_zeroed ~ labor_force, data = in_fssa) %>%
+  gf_lm()
+```
+
+```{r}
+mlr3 <- lm(TANF_cases_zeroed ~ labor_force + food_stamps_households + TANF_families, data = in_fssa)
+```
+```{r}
+summary(mlr3)
+```
+```{r}
+in_fssa <- in_fssa %>%
+  mutate(resid = resid(mlr3),
+         pred = predict(mlr3))
+```
+```{r}
+gf_point(pred ~ labor_force, data = in_fssa)%>%
+  gf_lm()
+```
+```{r}
+fam_pois <- glm(TANF_cases_zeroed ~ labor_force + food_stamps_households + TANF_families, data = in_fssa, family = poisson(link = 'log'))
+```
+
+
+```{r}
+gf_point(TANF_cases_zeroed ~ fitted(fam_pois), data = in_fssa) %>%
+  gf_abline(intercept = 0, slope = 1)
+```
+```{r}
+s245::gf_acf( ~fam_pois)
+```
+```{r}
+require(glmmTMB)
+fam_nb1 <- glmmTMB(TANF_cases_zeroed ~ labor_force + food_stamps_households + TANF_families, data = in_fssa, family = nbinom1(link = 'log'))
+```
+```{r}
+fam_nb2 <- glmmTMB(TANF_cases_zeroed ~ labor_force + food_stamps_households + TANF_families, data = in_fssa, family = nbinom2(link = 'log'))
+```
+```{r}
+car::Anova(fam_pois)
+```
+
+
+
+
+
+### Problem 0.0
+
+### Problem ?.?
+
+
+
+
+  

@@ -1,0 +1,129 @@
+---
+title: "Dolphin 110608"
+author: ""
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+```{r}
+Dolphin8 <- read.csv('110608-Behavior_QC.csv')
+glimpse(Dolphin8)
+```
+```{r}
+wide_dolph_dives <- Dolphin8 %>%
+  pivot_wider(names_from = What,
+              # variables listed in values_from are ones you want to keep/use 
+              # that are DIFFERENT for dive and surfacing
+              values_from = c(X, Number, Shape, DepthMin, DepthMax, DurationMin, DurationMax,
+                              Count, Shallow, Deep, Start, End, start, end, t.diff, flag,
+                              depth, duration)
+  ) %>%
+  # remove variables that are all NA
+  janitor::remove_empty(which = 'cols') %>%
+  # make datetime variables datetime objects - will be easier for plotting
+  mutate(across(Start_Dive:end_Surface, lubridate::mdy_hm))
+glimpse(wide_dolph_dives)
+```
+
+```{r}
+divedata <- wide_dolph_dives %>%
+  select(-'DepthSensor',
+         -'X_Surface',
+         -'DeployID_Surface',
+         -'Ptt_Surface',
+         -'Source_Surface',
+         -'t.diff_Dive',
+         -'t.diff_Surface',
+         -'flag_Dive',
+         -'flag_Surface')
+glimpse(divedata)
+```
+
+```{r}
+gf_bar( ~ DepthMax, data = divedata) 
+```
+
+Looking at the distribution of dive depths and duration
+
+
+```{r}
+gf_point(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives) %>%
+ gf_lm()
+```
+
+```{r}
+dives.lm <- lm(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives)
+summary(dives.lm)
+```
+
+
+```{r}
+cluster_data <- wide_dolph_dives %>%
+  select(depth_Dive, duration_Dive) %>%
+  mutate(depth=scale(depth_Dive),
+         duration=scale(duration_Dive))
+```
+
+```{r}
+c_out <-cluster::clara(cluster_data, k=2, metric = c("euclidean"))
+glimpse(c_out)
+
+```
+
+```{r}
+wide_dolph_dives <- wide_dolph_dives %>%
+  mutate(dtype=c_out$clustering)
+glimpse(wide_dolph_dives)
+```
+
+```{r}
+gf_point(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives,
+ color= ~dtype) %>%
+ gf_lm() 
+```
+
+```{r}
+Dolphin8Bin <- wide_dolph_dives %>%
+   mutate(binned_dur = case_when(duration_Dive < 200 ~ "< 200m",
+                                 duration_Dive >=200 & duration_Dive < 400 ~ "200 - 400s",
+                                 duration_Dive >=400 & duration_Dive < 600 ~ "400 - 600s",
+                                 duration_Dive >=600 & duration_Dive < 800 ~ "600 - 800s"))
+```
+
+```{r}
+gf_boxplot(depth_Dive ~ binned_dur, data = Dolphin8Bin %>%
+             select(depth_Dive, binned_dur) %>%
+             na.omit()) %>%
+  gf_labs(x = 'Binned Duration', y = "Dive Depth")
+```
+

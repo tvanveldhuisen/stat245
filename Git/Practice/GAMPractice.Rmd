@@ -1,0 +1,150 @@
+---
+title: "In Class Work"
+author: "Trevor, Johnathan, Grace, Ava"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 6.6
+    fig_width: 12
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+require(glmmTMB)
+require(mgcv)
+require(s245)
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+<!-- Put your work below here.  Put text in text chunks, code in R chunks. -->
+
+### Background
+
+The code below reads in a dataset with public health data from Zambia and does some data cleaning.  The response variable of interest is **height_zscore**, the z-score of the child's height compared to the national average. (The assumption is that malnourished or unhealthy children will be unusually small.) Other variables include:
+
+- **child_gender**
+- **breastf** duration of breast-feeding in months
+- **child_age** child's age in months
+- **mother_birth_age** mother's age when the child was born, in years
+- **mother_height** mother's height in cm
+- **mother_BMI** mother's body mass index
+- **mother_education** mother's education level
+- **mother_work** mother's work status
+- **region** Region in Zambia of mother's residence
+- **district** District in Zambia of mother's residence
+
+```{r}
+zam <- read.table('http://www.uni-goettingen.de/de/document/download/d90a2d7b26c4504ab6630cf36cbae2fa.raw/zambia_height92.raw',
+                  header=TRUE)
+names(zam) <- c('height_zscore', 'child_gender', 'breastf', 'child_age', 
+                'mother_birth_age', 'mother_height', 'mother_BMI',
+                'mother_education', 'mother_work', 'district', 'region', 'time')
+zam <- zam %>% mutate(child_gender = ifelse(child_gender==1, 'Male', 'Female')) %>%
+  mutate(mother_education = factor(mother_education)) %>%
+  mutate(mother_education = fct_recode(mother_education,
+                                       'None' = '1',
+                                       'Primary School' = '2',
+                                       'Secondary School' = '3',
+                                       'Higher Education' = '4')) %>%
+  mutate(mother_work = ifelse(mother_work==1, 'Working', 'Not Working')) %>%
+  mutate(region = factor(region)) %>%
+  mutate(region = fct_recode(region,
+                             'Central' = '1',
+                             'Copperbelt' = '2',
+                             'Eastern' = '3',
+                             'Luapula' = '4',
+                             'Lusaka' = '5',
+                             'Northern' = '6',
+                             'Northwestern' = '7',
+                             'Southern' = '8',
+                             'Western' = '9')) %>%
+  mutate(district = factor(district)) %>%
+  dplyr::select(-time)
+zam <- arrange(zam, district)
+glimpse(zam)
+```
+
+### Questions
+
+- Plan a regression model with `height_zscore` as the response variable. Discuss with your group which predictor(s) will be smooth, and what your choices of basis function and `k` will be. Are there other variables that you wish you had in the dataset so that you could include them as predictors (what)?
+
+```{r}
+model <- glmmTMB(height_zscore ~ mother_height + mother_BMI + child_age, data = zam)
+```
+
+```{r}
+gf_point(height_zscore ~ child_age, data = zam)
+```
+```{r}
+gf_acf(~model)
+```
+
+- Do exploratory data analysis to familiarize yourself further with the data
+- Fit a GAM to this dataset (with `height_zscore` as the response variable). View the summary and maybe the `gam.check()` to make sure everything looks OK (no warnings, failure to converge, NAs, etc.).
+- *Skip this section for now unless you have at least 10-15 minutes left. You can return at the end if time permits.* What conditions do you need to check for your model?  Make model assessment plots and check them.
+- Make prediction plots for the expected `height_zscore` as a function of two or more of your predictors (prioritizing smooth terms).  What patterns do you see? Do you think the smooths were needed, to model this data?
+
+ANSWER: The smooths were needed because the trends that the functions indicated were not linear. The smooths for mother_BMI & mother_height looked similar to each other, having a wave shape, while the plot for child_age was 'W' shaped.
+Because the predictors we chose are not linear, the smooths are needed to represent our predictors correctly.  
+
+- Processing. What do you think your results mean? If you were able to talk about them with parents in Zambia, or policymakers there, what would be important to communicate?
+
+
+ANSWER:
+There is an optimal BMI that has the least z-score
+Between the age of 20 and 40, the child's predicted height z-score is the lowest
+There seems to be an optimal mother height that seems to be correlated with lower predicted height z-scores
+As mentioned in the background, these children do seem to be unusually small as a majority of the z-scores are well below zero
+
+
+```{r}
+new.zam <- gam(height_zscore ~ s(child_age, k = 7, bs = 'cc') +
+               s(mother_height, k = 7, bs = 'cc') +
+                 mother_BMI,
+               data = zam,
+               method = 'ML',
+               select = TRUE)
+summary(new.zam)
+```
+
+```{r}
+gam.check(new.zam)
+```
+
+
+```{r}
+new.zam <- gam(height_zscore ~ s(child_age, k = 7, bs = 'cc') +
+               s(mother_BMI, k = 7, bs = 'cc') +
+               s(mother_height, k = 7, bs = 'cc'),
+               data = zam,
+               method = 'ML',
+               select = TRUE)
+summary(new.zam)
+pred_plot(new.zam, 'mother_BMI') %>% gf_labs(y = 'Predicted Height Z-Score',
+                                            x = 'Mother BMI')
+pred_plot(new.zam, 'child_age') %>% gf_labs(y = 'Predicted Height Z-Score',
+                                            x = 'Child Age')
+pred_plot(new.zam, 'mother_height') %>% gf_labs(y = 'Predicted Height Z-Score',
+                                            x = 'Mother Height')
+```
+
+
+

@@ -1,0 +1,275 @@
+---
+title: "All Dolphins"
+author: ""
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  word_document:
+    fig_height: 4
+    fig_width: 6
+  pdf_document:
+    fig_height: 4
+    fig_width: 6
+  html_document:
+    fig_height: 4
+    fig_width: 6
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+require(glmmTMB)
+require(s245)
+require(ggeffects)
+require(geepack)
+require(DHARMa)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+```{r}
+Dolphin6 <- read.csv('110606-Behavior_QC.csv')
+```
+
+```{r}
+Dolphin7 <- read.csv('110607-Behavior_QC.csv')
+```
+
+```{r}
+Dolphin8 <- read.csv('110608-Behavior_QC.csv')
+```
+
+```{r}
+Dolphin10 <- read.csv('110610-Behavior_QC.csv')
+```
+
+```{r}
+alldolph <- bind_rows(Dolphin6, Dolphin7, Dolphin8, Dolphin10)
+```
+
+```{r}
+glimpse(alldolph)
+```
+
+```{r}
+alldolph = alldolph %>%
+  mutate(Ptt = case_when(Ptt == 110606 ~ 'Dolphin6',
+Ptt == 110607 ~ 'Dolphin7',
+Ptt == 110608 ~ 'Dolphin8',
+Ptt == 110610 ~ 'Dolphin10'))
+```
+
+```{r}
+wide_dolph_dives <- alldolph %>%
+  pivot_wider(names_from = What,
+              # variables listed in values_from are ones you want to keep/use 
+              # that are DIFFERENT for dive and surfacing
+              values_from = c(X, Number, Shape, DepthMin, DepthMax, DurationMin, DurationMax,
+                              Count, Shallow, Deep, Start, End, start, end, t.diff, flag,
+                              depth, duration)
+  ) %>%
+  # remove variables that are all NA
+  janitor::remove_empty(which = 'cols') %>%
+  # make datetime variables datetime objects - will be easier for plotting
+  mutate(across(Start_Dive:end_Surface, lubridate::mdy_hm))
+```
+
+```{r}
+cluster_data <- wide_dolph_dives %>%
+  select(depth_Dive, duration_Dive) %>%
+  mutate(depth=scale(depth_Dive),
+         duration=scale(duration_Dive))
+```
+
+```{r}
+c_out <-cluster::clara(cluster_data, k=2, metric = c("euclidean"))
+```
+
+
+```{r}
+wide_dolph_dives <- wide_dolph_dives %>%
+  mutate(dtype=c_out$clustering)
+```
+
+```{r}
+wide_dolph_dives = wide_dolph_dives %>%
+mutate(dtype = case_when(dtype == 1 ~ 'shallow',
+dtype == 2 ~ 'deep'))
+```
+
+Trevor---------------------------------------------
+Looking at a summary of all of the variables
+```{r}
+summary(wide_dolph_dives)
+```
+
+
+Exploratory Graph 
+```{r}
+gf_point(duration_Surface ~ duration_Dive, data = wide_dolph_dives, color = ~dtype, alpha = 0.2) %>%
+  gf_labs( x = 'Dive Duration',
+           y = 'Surface Duration') %>%
+   gf_theme(scale_color_discrete('Dive Type'))
+```
+```{r}
+gf_point(duration_Surface ~ duration_Dive | ~dtype, data = wide_dolph_dives, alpha = 0.2) %>%
+  gf_labs( x = 'Dive Duration',
+           y = 'Surface Duration')
+```
+Fitting the model and summary
+```{r}
+dolphdive <- glmmTMB(duration_Surface ~ duration_Dive*dtype + depth_Dive + (1| Ptt), data = wide_dolph_dives, family = Gamma(link='log')) 
+summary(dolphdive)
+```
+Creating predictors and Residuals
+
+```{r}
+conditions <- wide_dolph_dives %>%
+  mutate(preds = predict(dolphdive),
+         resids = resid(dolphdive))
+```
+Model Assessment
+
+```{r}
+dolphin_dur <- simulateResiduals(dolphdive)
+gf_point(dolphin_sim$scaledResiduals ~ fitted(dolphdive),
+ alpha = 0.2) %>%
+ gf_labs(x = 'Fitted Values',
+ y = 'Scaled Residuals')
+```
+```{r}
+s245::gf_acf(~dolphdive) %>%
+  gf_lims(y = c(-1,1))
+```
+
+Predicted Values of Surface Duration
+```{r}
+ggeffects::ggpredict(dolphdive)
+```
+
+```{r}
+d2 <- wide_dolph_dives %>%
+  select(duration_Dive, duration_Surface, dtype, depth_Dive) %>%
+  na.omit() %>%
+  mutate(preds = predict(dolphdive))
+```
+
+```{r}
+ggpredict(dolphdive, 
+          terms = c('duration_Dive',
+                    'dtype [0]',
+                    'depth_Dive [1]'),
+          type = 'fixed') %>%
+  plot() %>%
+  gf_labs(y = 'Predicted Duration on Surface',
+          x = 'Dive Duration')
+```
+
+
+
+
+
+
+---------------------------------------------------------------------------------------------------------
+
+ALL OF THIS IS DOLPHIN 8:
+
+
+
+
+```{r}
+#gf_bar( ~ DepthMax, data = divedata) 
+```
+
+
+
+```{r}
+AllDolphinsBin <- wide_dolph_dives %>%
+   mutate(binned_dur = case_when(duration_Dive < 200 ~ "< 200m",
+                                 duration_Dive >=200 & duration_Dive < 400 ~ "200 - 400s",
+                                 duration_Dive >=400 & duration_Dive < 600 ~ "400 - 600s",
+                                 duration_Dive >=600 & duration_Dive < 800 ~ "600 - 800s"))
+```
+
+```{r}
+gf_boxplot(depth_Dive ~ binned_dur, alpha = 0.2, data = AllDolphinsBin %>%
+             select(depth_Dive, binned_dur) %>%
+             na.omit()) %>%
+  gf_labs(x = 'Binned Duration', y = "Dive Depth")
+```
+
+
+
+----------
+
+Looking at the distribution of dive depths and duration 
+
+Initial look at depth and duration of a dive:
+```{r}
+gf_point(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives, alpha = 0.2)%>%
+  gf_labs( x = 'Dive Duration',
+           y = 'Dive Depth')
+```
+
+
+
+Depth and Duration of Dives with separation by new variable dtype
+```{r}
+gf_point(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives,
+ color= ~dtype, alpha = 0.2) %>%
+  gf_labs( x = 'Dive Duration',
+           y = 'Dive Depth')
+```
+```{r}
+wide_dolph_dives <- wide_dolph_dives %>% group_by(Ptt) %>%
+  mutate(tsec = as.numeric(Start_Dive - first(Start_Dive)),
+         time_block = cut_width(tsec, width = 6*60*60, boundary = 0))
+glimpse(wide_dolph_dives)
+```
+
+```{r}
+dolphin_bin <- glmmTMB(depth_Dive ~ duration_Dive*dtype + duration_Surface + (1|Ptt) + (1|time_block), data = wide_dolph_dives, family = Gamma(link='log')) 
+
+summary(dolphin_bin)
+```
+
+ACF graph for model
+```{r}
+s245::gf_acf(~dolphin_bin) %>%
+  gf_lims(y = c(-1,1))
+```
+
+Scaled resid. by fitted model 
+```{r}
+require(DHARMa)
+dolphin_sim <- simulateResiduals(dolphin_bin)
+gf_point(dolphin_sim$scaledResiduals ~ fitted(dolphin_bin),
+ alpha = 0.2) %>%
+ gf_labs(x = 'Fitted Values',
+ y = 'Scaled Residuals')
+```
+
+
+Predicted Values of Dive Depth
+```{r}
+ggeffects::ggpredict(dolphin_bin)
+```
+
+
+
+
+
+
+

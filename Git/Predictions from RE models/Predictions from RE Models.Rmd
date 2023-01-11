@@ -1,0 +1,389 @@
+---
+title: "Predictions from RE models"
+output: html_document
+---
+
+---
+title: "Predictions from Random Effects Models"
+author: "STAT 245 Fall 2020"
+date: "11/2/2020"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(mosaic)
+require(tidyverse)
+require(ggformula)
+require(glmmTMB)
+require(DHARMa)
+require(s245)
+require(ggeffects)
+knitr::opts_chunk$set(echo = TRUE, error = TRUE)
+theme_set(theme_minimal(base_size = 18))
+```
+
+## Instructions
+
+Today's exercise will guide you through fitting a logistic mixed-effects model (logistic regression with random effects), a quick model assessment, and then various prediction plots to view and interpret.
+
+Before you start, elect in your group:
+
+- An R operator/code typist/screen sharer
+- A manager to keep everyone on task and on schedule
+- A communication person to talk with prof as needed
+- If you have more people: a course notes/slides/Moodle reference person
+
+Then, have fun!
+
+## Data
+
+(Same as last practice session)
+
+```{r, message = FALSE}
+pw <- read_csv('https://sldr.netlify.app/data/pwd.csv') %>%
+  mutate(activity = ifelse(n_buzzes > 0,
+                           'foraging',
+                           'other'),
+         activity = forcats::fct_relevel(activity,
+                                         'other',
+                                         'foraging'))
+pw <- pw %>%
+  mutate(prev_buzzes = c(0, head(pull(pw, n_buzzes), -1)),
+         time_cat = cut_interval(time_of_day, length = 0.1))
+glimpse(pw)
+```
+
+## Model Fitting
+
+The model fitted here is a version of the one we all worked on together last week (this time I chose the predictors and random effects, but you worked on a similar one with your team).
+
+Our response variable is `activity`, which indicates whether or not whales are foraging.
+
+If you want to review the variables and context of the dataset you can review [last week's instructions](https://moodle.calvin.edu/pluginfile.php/1832420/mod_label/intro/random-effects.html).
+
+```{r}
+pw_re <- glmmTMB(activity ~ ODBA + duration + 
+                   prev_buzzes*dive_state + 
+                   (1|individual/time_cat), 
+                 data = pw, family = binomial(link = 'logit'))
+summary(pw_re)
+```
+
+**How many coefficients and parameters have to be estimated to fit the model above? Don't forget the variances (for the random effect(s) and the residuals)...Now, what if you had included `individual` as a fixed effect instead?  With 14 individual whales in the dataset, how many more coefficients would it take to add the `individual` predictor as a fixed effects instead of a random effect?**
+
+Fixed effect takes 12 more parameters than random effect. Fixed effect takes 13 parameters
+*Consult Prof DR about your answer. Make sure everyone understands how you determined the answer.*
+
+### Model Planning check-in
+
+According to our previous rule of thumb, how many coefficients can we safely plan to answer from this data set?  To figure it out, create a table showing the number of "successes" and "failures" in the dataset.  Refer back to [our reference document for making tables](https://moodle.calvin.edu/pluginfile.php/1599705/mod_label/intro/tables-summary-stats.html) if needed.
+
+```{r}
+tally(~activity, data = pw)
+522/15
+
+```
+
+What do you think - are we estimating too many coefficients, or are we OK?
+
+NO 522/15 = 34.8 so, because we have 13 parameters and 13 < 34.8 it is ok!
+
+When fitting random effects models, *be conservative* about the number of coefficients you're including.  Fitting a random effect technically estimates just one parameter value, the random effect variance $\sigma_{RE}$. But many argue that it "uses up" an amount of coefficient-fitting capacity that is somewhere between 1 (for the random effect variance) and the number of coefficients it would take to include that same predictor as a regular predictor (here, 13).
+
+So when fitting random-effects models, we should err a bit on the side of including fewer predictors.
+
+
+## Model Assessment
+
+### Independence of residuals
+
+```{r}
+gf_acf(~pw_re) 
+```
+Good-not perfect
+
+### Mean-variance relationship and (logit) linearity
+
+```{r}
+pw_sim <- simulateResiduals(pw_re)
+gf_point(pw_sim$scaledResiduals ~
+           fitted(pw_re),
+         alpha = 0.1) %>%
+  gf_labs(x = 'Predicted Prob(Feeding)',
+          y = 'Scaled Residuals')
+```
+Top has more weight than the rest of the graph and the left has more weight than the right side.
+### (logit) Linearity
+
+One example of checking linearity on a per-predictor basis:
+
+```{r}
+pw_dur <- pw %>%
+  mutate(cat_duration = cut_number(duration, 10)) %>%
+  group_by(cat_duration) %>%
+  mutate(prop_feeding = prop(~activity == 'foraging'),
+         median_dur = median(~duration),
+         logit_p_feeding = logit(prop_feeding))
+
+gf_point(logit_p_feeding ~ median_dur,
+         data = pw_dur) %>%
+  gf_labs(x = 'Dive Duration',
+          y = 'logit(P(feeding))') %>%
+gf_lm()
+```
+
+(If you have time at the end, try this for one more predictor).
+
+**Looking at all the plots above, what do you think -- any evidence that conditions are not met?**
+There is evidence that the conditions are not met. The acf test, the residuals do not stay within the confidence bounds, and the scaled residuals is not totally uniform and weighs more to the top.
+*Consult with Prof DR about your group's conclusions before proceeding further.*
+
+## Prediction Plots: Average Individual
+
+First, we make the predictions that are most natural and simple to make: ones for "the average individual".  These are equivalent to using the right-hand side of the model equation (*ignoring* both $\epsilon_{RE}$ and $\epsilon_{resid}$) and applying the inverse logit transform to convert it to a probability.
+
+Since we have two random effects: time period nested within individual, here we'll be making predictions for the *average* time-period of the *average individual*.
+
+We have to choose one predictor to make the first predictions plots for; I'll choose dive `duration`.
+
+```{r}
+require(ggeffects)
+ggpredict(pw_re, 
+          terms = 'duration')
+```
+
+At what values were the "predictors not shown" fixed?  They are in the output above, under the heading "Adjusted for".
+
+ODBA at value 2.05 and dive_state at 0.18.
+
+To get a graph rather than text output (now that we know the fixed values used to make the predictions), just add `%>% plot()` to the code.
+
+```{r}
+ggpredict(pw_re, 
+          terms = 'duration') %>%
+  plot()
+```
+
+Taking `ggeffects` up on its offer to get a "smooth plot":
+
+```{r}
+ggpredict(pw_re, 
+          terms = 'duration [all]') %>%
+  plot() %>%
+  gf_labs(title = '',
+          y = 'Probability of Feeding',
+          x = 'Dive Duration (seconds)')
+```
+
+**Summarize the relationship that exists between dive duration and probability of feeding, according to this model, in a sentence.** *Share your results with Prof DR before going further.*
+
+As the duration increases, the chance of foraging increases as well.
+
+## Prediction Plots: All the Whales
+
+This isn't something you need to be able to do, but I think it may help with understanding the idea of the random effect, and also the "average individual".
+
+So: I'll show you how to make predictions for each of the whales in the dataset, and we'll add them to our "average individual" prediction plot.
+
+First, we make a hypothetical dataset where duration varies from 4 to 825 seconds (like in the real data), for each of our 14 whales. We'll fix the other predictors at the same values as before.
+
+```{r}
+ind_pred_data <- expand.grid(individual = pull(pw, individual) %>% unique(),
+                             duration = seq(from = 4, by = 10, to = 825),
+                             ODBA = 2.05,
+                             water_depth = 450.57,
+                             prev_buzzes =   0.18,
+                             dive_state = 'Travel',
+                             time_cat = NA) #(population-level)
+```
+
+Now, make predictions with SEs for this dataset, but *including* the random effect of individual. (R is able to estimate, for each individual, how far it is from the "average" individual; the standard deviation of these differences is the reported estimate of $\sigma_{RE}$!)
+
+```{r}
+ind_preds <- predict(pw_re,
+                     type = 'link',
+                     se.fit = TRUE,
+                     newdata = ind_pred_data,
+                     # to make specific-individual-level predictions rather than average-individual:
+                     re.form = NULL 
+                     )
+
+ave_ind <- predict(pw_re,
+                   type = 'link',
+                   se.fit = TRUE,
+                   newdata = ind_pred_data,
+                   # to EXCLUDE individual random effects from predictions:
+                   re.form = ~0)
+```
+
+Now, as we are used to, convert the predictions and SEs to CIs in preparation for making the prediction plot.
+
+```{r}
+ind_pred_data <- ind_pred_data %>%
+  mutate(pred = ilogit(ind_preds$fit),
+         CI_bottom = ilogit(ind_preds$fit - 1.96*ind_preds$se.fit),
+         CI_top = ilogit(ind_preds$fit + 1.96*ind_preds$se.fit),
+         ave_ind_pred = ilogit(ave_ind$fit),
+         ave_CI_bottom = ilogit(ave_ind$fit - 1.96*ave_ind$se.fit),
+         ave_CI_top = ilogit(ave_ind$fit + 1.96*ave_ind$se.fit))
+```
+
+Finally make the graph. Start with the previous `ggeffects` plot, and add on a new layer colored by whale. We omit the legend because we don't need to know which whale is which; but each color is one whale.
+
+```{r, fig.width = 7.5, fig.height = 6.5}
+gf_ribbon(CI_bottom + CI_top ~ duration,
+            alpha = 0.3,
+            fill = ~individual,
+          data = ind_pred_data) %>%
+    gf_line(pred ~ duration, 
+          data = ind_pred_data,
+          color = ~individual,
+          size = 1.5) %>%
+       gf_labs(title = '',
+          y = 'Probability of Feeding',
+          x = 'Dive Duration (seconds)') %>%
+    gf_theme(legend.position = 'none')  %>%
+  gf_line(ave_ind_pred ~ duration,
+            size = 2, alpha = 1,
+            data = ind_pred_data,
+            color = 'black') %>%
+    gf_ribbon(ave_CI_bottom + ave_CI_top ~ duration,
+              fill = 'black', alpha = 0.5)
+```
+
+
+Hmm, kind of wild.
+
+What if we plot again without uncertainty, just to see the lines more clearly?
+
+
+```{r, fig.width = 7.5, fig.height = 6.5}
+gf_line(pred ~ duration, 
+          data = ind_pred_data,
+          color = ~individual,
+          size = 1.5,
+        alpha = 0.7) %>%
+       gf_labs(title = '',
+          y = 'Probability of Feeding',
+          x = 'Dive Duration (seconds)') %>%
+  #  gf_theme(legend.position = 'none')  %>%
+  gf_line(ave_ind_pred ~ duration,
+            size = 2, alpha = 1,
+            data = ind_pred_data,
+            color = 'black') 
+```
+
+Any ideas why the black "average individual" does *not* look like it is in the middle in any sense? 
+There are more individuals that pull the average more to the right rather than having it right in the middle. 
+
+**Consult Prof DR with your ideas.**
+
+*Then, see the very bottom of this document for my thoughts...*
+
+
+## Prediction Plots: Population Average
+So far, we have made predictions for the *average individual* whale.
+
+But what if we wanted to make predictions for the average probability of feeding, across all whales in a population? (This is the kind of "average" that a model with no random effects would typically predict.)
+
+One way is to use something called a **parametric bootstrap**.  I'll try to explain, but focus on the big picture -- we want to get population average predictions to compare with the average individual ones, and there's some pretty advanced stats and code to achieve it.
+
+This means that we simulate many new hypothetical datasets *from the fitted model*. To carry out each simulation, we draw a proposed value for the intercept, all the slope coefficients, and the values of each random effect. (These will vary each simulation depending on the amount of uncertainty in the model and the variance $\sigma_{RE}$.)
+
+Then we re-fit the model to the new fake data and make predictions from that model.
+
+We do that over and over to get a sense of the *distribution* of predicted values for every desired combination of predictor variable values.
+
+To make this work, we first have to create a function that takes a fitted model and makes the predictions we want from it. When you run the chunk below, it won't seem to "do" anything, as what it's doing is defining a function `predict_pw_re()` for later use.
+
+```{r}
+predict_pw_re <- function(model){
+  orig_dat <- model$frame
+  fixed_vals <- get_fixed(orig_dat[,c(2:ncol(orig_dat))])
+  new_dat <- get_new_data(orig_dat, 
+                          predictor = 'duration',
+                          fixed_vals)
+  return(predict(model, 
+                 newdata = new_dat,
+                 type = "response", 
+                 allow.new.levels = TRUE))
+}
+```
+
+The code below does the parametric bootstrap for you. But do not run it - it will take a half hour or so, so it's been done for you (and then the result read in from online where I stored it).
+
+```{r}
+# require(lme4)
+# boot_pw_re <- bootMer(pw_re, # the fitted model
+#                      FUN = predict_pw_re, # our function
+#                      nsim = 100, # make this 1000+ if you have time/computer can handle
+#                      type = "parametric", # parametric bootstrap
+#                      use.u = FALSE)
+# saveRDS(boot_pw_re, 'boot_pw_re.RDS')
+
+boot_pw_re <- readRDS(url('https://sldr.netlify.app/data/boot_pw_re.RDS'))
+```
+
+The last input, `use.u = FALSE`, tells `bootMer()` to draw new normal random effect values (simulate new whales each time, not re-use the 14 actually observed in the original dataset).
+
+We get a population average prediction by taking the mean of the simulated predictions, and a CI can be estimated by taking their 2.5 and 97.5 percentiles.
+
+```{r}
+orig_dat <- pw_re$frame
+fixed_vals <- get_fixed(orig_dat[,c(2:ncol(orig_dat))])
+pop_ave_data <- get_new_data(orig_dat, 
+                          predictor = 'duration',
+                          fixed_vals)
+
+
+pop_ave_data <- pop_ave_data %>%
+  mutate(pop_ave_pred = apply(boot_pw_re$t, 2, mean),
+         CIlow = apply(boot_pw_re$t, 2, quantile, probs = 0.025),
+         CIhigh = apply(boot_pw_re$t, 2, quantile, probs = 0.975)
+         )
+```
+
+Now, we just want to compare the "average individual" predictions to the "population average" predictions:
+
+```{r}
+gf_line(ave_ind_pred ~ duration,
+        size = 2,
+        data = ind_pred_data,
+        color = 'darkblue',
+        linetype = 'dashed') %>%
+    gf_ribbon(ave_CI_bottom + ave_CI_top ~ duration,
+              data = ind_pred_data,
+              fill = 'darkblue', 
+              alpha = 0.5,
+              inherit = FALSE) %>%
+  gf_line(pop_ave_pred ~ duration,
+          size = 2,
+          data = pop_ave_data,
+          color = 'darkred',
+          inherit = FALSE) %>%
+  gf_ribbon(CIlow + CIhigh ~ duration,
+            data = pop_ave_data,
+            fill = 'darkred',
+            inherit = FALSE) %>%
+  gf_labs(y = 'Probability of Feeding',
+          x = 'Dive Duration (seconds)')
+```
+
+The population average prediction (solid red) has a somewhat different shape, and wider confidence bands compared to the blue dashed average-individual line (because it includes the individual-to-individual variation as well as uncertainty in the coefficient estimates).
+
+Which one is "better"? It depends.
+
+Do you think it makes more sense to show how *one whale's* probability of feeding would be expected to vary over a range of depths? Or do we want to show the feeding probability-depth relationship that we'd get if we sampled bunches of dives from many whales, at many depths?
+
+Which does your group think is preferable in this scenario - average individual or population average? *Share your final conclusions with Prof DR and -- you're done!*
+
+**If you have more time left, go back and repeat one or more of the prediction plots for a DIFFERENT predictor...**
+
+
+## Solution to earlier question
+
+*I think the "average individual" is far from the middle because individuals have very different number of dives. And when NOT feeding, the whales tend to do much shorter and shallower dives, so with each row of data representing one dive, the "very shallow not feeding" behavior is more typical in terms of the proportion of dives in the dataset that have those characteristics. Also, there are a number of whales overplotted there around the "average individual" line -- the other lines that your eye is drawn to are 6-7, so there must be 7-8 more others under the black one!*

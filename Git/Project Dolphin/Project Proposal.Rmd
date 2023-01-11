@@ -1,0 +1,49 @@
+---
+title: "Project Proposal"
+name: Trevor, Jonathan, Grace
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Our project partner is Andreas Fahlman. He is a comparative physiologist whose research projects revolve around the central question of how animals function in challenging environments. Mission: To investigate the dive behavior from 4 pelagic bottlenose dolphins based on time-depth and satellite data over a number of months. 
+
+Our goals of the project will be to look at these four questions:
+1) Look at how dive behavior changes with time a) day/night b) temporally). If there are days or weeks when they dive deeper and/or longer, we could look at location in the ocean where they were
+
+2) Look to see if surface duration changes before or after different dive durations or dive depths
+
+3) See if there is a certain dive duration where dive depth changes (could do a broken stick model to see “break” point) 
+
+4) Look at the distribution of dive depths and duration 
+
+Deliverables:
+GIS modelling?
+Regressions models (Poisson?)
+Prediction Plots
+Box plots
+Histograms
+
+Data:
+We were given excel documents with the data.  
+
+Data Prep:
+We do not know how to do this. Help would be greatly appreciated.
+
+Background:
+Academic journals on marine biology
+https://seaworld.org/animals/all-about/bottlenose-dolphin/
+National Geographic about dolphins
+
+Current Skills:
+Jonathan- Excel, Determination
+Grace- organization, Excel
+Trevor- Excel, and tableau? 
+
+Work Plan:
+Communicate via text at the beginning of each week to see what work needs to be done and how to divide or delegate that work. Set up a normal meeting time with our project partner biweekly.
+
+Requests:
+Help with R studio
+How to implement our data into R
+Potentially GIS modelling?

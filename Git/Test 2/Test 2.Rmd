@@ -1,0 +1,124 @@
+---
+title: "Test 2"
+author: "Trevor VanVeldhuisen"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+```{r}
+birds <- read_csv('https://sldr.netlify.app/data/seabird-mercury.csv') 
+  glimpse(birds)
+```
+
+The specific research question I am going to answer is if mercury levels are associated with the success of breeding in grey-headed albatrosses near Antarctica. I am going to answer this question by fitting a binary regression model since the outcome of interest here is binary.
+The model plan includes the response variable: breeding success and the following set of predictors: total_mercury, breeding_history, age, foraging_habitat, trophic_level, sex. Total Mercury is the main predictor variable that we want to see if it has an association with breeding success. However, I included the rest of the variables that describe features of the albatrosses to see if these other factors might also be associated with breeding, as total mercury may not be the only factor and others may provide insight as to the impact of breeding success. After model fitting, the breeding history predictor provided peculiar estimates. Since it was not part of the primary question, I decided to remove breeding history from the model.
+
+```{r}
+birds <- birds %>%
+  mutate(breeding = factor(breeding),
+         breeding_history = factor(breeding_history))
+```
+
+```{r}
+gf_boxplot( breeding ~ total_mercury, data = birds) %>%
+  gf_labs( y = 'Breeding',
+           x = 'Total Mercury Levels')
+```
+
+Data exploration/graphics: From the boxplot we learn that successful breeding tends to happen when there are lower levels of mercury. The median and the upper quartile of failed breeding are both greater than successful breeding. This graph supports the hypothesis that the total mercury levels may be associated with breeding success, that I will further assess by fitting a binary regression model to the data. 
+
+```{r}
+birds.logr <- glm(factor(breeding) ~ total_mercury + foraging_habitat + trophic_level + age + sex, 
+                  data = birds,
+                  family = binomial(link='logit'))
+```
+```{r}
+summary(birds.logr)
+```
+
+yi ~ Binom(ni,pi) - the ith observation of the response trials. Here ni = 1, I fit a binary regression model with the logit link. Here is the specific model:
+logit(pi) = 3.46859 -0.04982total_mercury + 0.19921foraging_habitat + 0.06085trophic_level - 0.03792age + 0.63694sexM + E
+yi ~ Binom(n, pi)
+
+I chose binary regression because I have a binary response variable: breeding. The logit function was also used because the outcome is binary. This logit function maps the probabilities from the range of 0 to 1. 
+
+```{r}
+require(DHARMa)
+```
+
+```{r}
+birds_sim <- (simulateResiduals(birds.logr))
+```
+```{r}
+gf_point(birds_sim$scaledResiduals ~ fitted(birds.logr),
+         alpha = 0.2) %>%
+  gf_labs(x = 'Fitted Values',
+          y = 'Scaled Residuals')
+```
+
+Through this scaled Residuals vs Fitted Values plot we see that there are no trends and the scaled residuals have uniform distribution showing it passes the mean-variance assessment. 
+
+```{r}
+car::Anova(birds.logr)
+```
+  
+I used the hypothesis testing approach, with the null hypothesis being that there is no association between total mercury and breeding success (Odds ratio = 1). Through testing the null hypothesis, we have evidence to reject the null hypothesis since there is statistically significant association between total mercury and breeding success, with higher mercury levels associated with less breeding success. As part of this analysis that included other predictors, we also noted that the albatross sex was also associated with less breeding success. 
+
+```{r}
+require(s245)
+```
+
+```{r}
+get_fixed(birds.logr)
+```
+
+```{r}
+pred_plot(birds.logr, 'total_mercury', data = birds) %>%
+  gf_labs( y = 'Proportion Sucessful',
+           x = 'Total Mercury')
+```
+  
+This prediction plot shows a negative correlation between successful breeding and total mercury levels. The more mercury content in a grey-headed albatross, the less likely they are able to successfully breed. 
+ 
+Looking at all of the data presented above, it seems that mercury content in grey-headed albatrosses does have a negative effect on the breeding success. 
+First, looking at the boxplot, we can see the median mercury level is higher in albatrosses who were not successful in breeding. We can also observe the upper quartile extending beyond that of those who were successful at breeding. 
+Second, from the binary regression model, the estimate of -0.04982 for mercury was statistically significant for breeding success (p-value = 0.0232), with the odds ratio of 0.95, indicating a 0.95 odds of success for every 1 unit increase in mercury. SexM was also a significant predictor with an estimate of 0.63694 (p-value = 0.0481) with an odds ratio of 1.8907. The rest of the predictors I chose: foraging_habitat, trophic_level, sex, and breeding_history, were not associated and  had higher p-values > 0.05, suggesting they are not significant predictors. 
+Third, the model passed the mean-variance test, as there were no patterns or trends, and the scaled residuals showed a uniform distribution, indicating a good fit to the model.
+Fourth, testing our null hypothesis of no age effect, we concluded to reject the null hypothesis since there is evidence of an association between total_mercury and breeding success. We also found that age and breeding success also have an association through and rejecting a null hypothesis of no age effect. 
+Fifth, looking at the prediction plot we can see a negative correlation between total_mercury and the proportion of successful breeding.
+Lastly, looking at the odds ratio, the Beta for Mercury is -0.04982. The exponentiation of e^-0.04982 = 0.9514 is the odds ratio for a one unit change in mercury. The odds of breeding are 0.95 less for every one unit change in mercury showing a negative association between breeding success and total_mercury. 
+
+
+
+
+
+
+
+

@@ -1,0 +1,272 @@
+---
+title: "Likelihood practice"
+author: "Group names here"
+date: "Sept. 24, 2021
+output: 
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+    toc: true
+    toc_float: true
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+library(tidyverse)   # this loads mosaic, ggformula, etc. too
+library(ggformula)
+library(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE,
+  error = TRUE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+
+# Instructions
+
+This document will guide you through an exercise designed to deepen your understanding of likelihood and maximum-likelihood estimation of linear regression models. 
+
+Before you start, choose roles for each person on your team:
+
+- One person to type in R
+- A code expert to help interpret code (someone most confident in R coding)
+- A manager - will read instructions out loud and keep the group on task
+- Additional roles if you have more group mates: 
+  - inclusion (try to ensure everyone contributes and is included) and 
+  - notes reference (have the course notes or your class notes ready for quick reference as needed)
+  
+# Data
+
+Today we will use a simple little dataset. What makes cheese tasty?  The dataset `cheddar` from package `faraway` has data on expert cheese tastiness ratings, as well as several chemical properties of each cheese. (Unfortunately, we don't have a lot of detail about the units of measure or method of determining these properties -- it is obvious that Dr. Faraway, who provided the data, is a statistician and not a chemist.)
+
+```{r}
+library(faraway)
+glimpse(cheddar)
+```
+
+Before you continue,  make exploratory data plots to see whether you note any trends in `taste` depending on the `H2S`, `Acetic` acid, or `Lactic` acid content of the cheeses in the dataset.
+
+# Regression model
+
+There are 30 data points, so we'd be best off considering a model with 1-2 predictors and not all 3. For this exercise, let's do just one predictor; you can choose as a group which one you want to try. (This is "night science" -- fun and exploration -- so we won't worry about the fact that you are probably choosing which one to use based on the data plots you just made!)
+
+Adjust the code below to fit a one-predictor linear regression model with your chosen predictor.
+
+```{r}
+cheese_model <- lm(taste ~ Lactic, data = cheddar)
+```
+
+You know how to view the model summary and get the parameter estimates for the intercept and slope:
+
+```{r}
+summary(cheese_model)
+```
+
+
+Once you've gotten this far, check in with the prof to let her know where you are and if you have any questions.
+
+# Likelihood, instead
+But how could we use **likelihood** to find these parameter estimates, ourselves?  
+
+What you'll do next isn't exactly what R does to fit an `lm()`. For the linear regression case, smart folks have used calculus and linear algebra to derive analytical solutions for the parameter estimates - that's why `lm()` can be super fast. And in cases where R does need to maximize a likelihood to fit a model, it uses smarter methods than just trying all reasonable possibilities and choosing the best among them. But this way (basically a grid search) is a great illustration of the *idea* of maximum-likelihood estimation, even if it's not the fastest algorithm to carry it out.
+
+**You don't have to be able to replicate the R code in the following sections. But do your best to work as a group to UNDERSTAND what each code chunk is doing. I suggest adding additional explanation or code comments as needed.**
+
+
+## Guess the parameters
+
+Based on what you have seen in the scatter plots, you can probably give reasonable upper and lower boundaries on the intercept and slope for your regression line (don't use the estimates from the `lm()` summary to give unreasonably precise guesses - the point here is to give a wider range to "search" for the best parameter values).
+
+Adjust the code below so that your range of reasonable intercepts and slopes is covered. The code below is my initial guess for one of the possible predictors; make sure the ranges of slopes and intercepts match your predictor and your group's sense of what the intercept and slope might be!
+
+```{r}
+gf_point(taste ~ Lactic, data = cheddar)
+```
+
+
+```{r}
+MLE_grid <- expand_grid(intercept = seq(from = -15, by = 0.1, to = 10),
+                        slope = seq(from = 5, by = 0.1, to = 20))
+glimpse(MLE_grid)
+```
+
+Each row of `MLE_grid` give one set of guesses of a possible slope and intercept for our regression model.  
+
+Now, we want to compute the **likelihood of the dataset given each of those sets of parameters**. We can compare the likelihoods to see which estimates are best!
+
+
+Once you've gotten this far, check in with to the prof to let her know where you are and if you have any questions.
+
+## Compute the likelihood: Fitted values
+
+How will we compute the likelihood? Well, first we need to get the model *residuals* (since we compare those to a normal distribution in order to get the likelihood).
+
+And to get the residuals, we need to subtract the model-predicted values from the observed values of the response.
+
+We already have the response variable values.  But we need the predicted values!  We have to compute them by hand, since we are not using `lm()` -- we can't use `predict()` without the fitted model object that comes from `lm()`!
+
+But no problem, we can do this.
+
+Our model is:
+
+$$y = \beta_0 + \beta_1x + \epsilon$$
+
+And according to this model, the predicted value of $y$ (on average) is $\beta_0 + \beta_1x$.
+
+Well, $x$ is the predictor -- we have data on that. We also have candidate values of $\beta_0$ (the intercepts) and $\beta_1$ (the slopes).  
+
+We will make our own function to compute fitted values, given a dataset and candidate slope and intercept. Change this to make sure it uses "your" predictor! Running this chunk will create a FUNCTION you can use later -- so there will be no output yet.
+
+```{r}
+get_fitted <- function(slope, intercept, data){
+  fitted <- intercept + slope * pull(data, Lactic)
+}
+
+get_fitted <- Vectorize(get_fitted, c('slope', 'intercept'), SIMPLIFY = FALSE)
+```
+
+So we can add a column to our `MLE_grid` with the fitted values for each row like this. This will take a while to run. When it's done, look what has happened: each *row* of the dataset contains a *list* of 30 fitted values! (Cool.)
+
+```{r}
+MLE_grid <- MLE_grid %>%
+  mutate(fitted = get_fitted(slope, intercept, data = cheddar))
+glimpse(MLE_grid)
+```
+
+## Compute the likelihood: Residuals
+
+OK. We don't actually need the fitted values themselves: we need the residuals. We can compute them in a similar way, though.  We just need to subtract the fitted values from the observed response variable values!
+
+```{r}
+get_resids <- function(slope, intercept, data){
+  fitted <- intercept + slope * pull(data, Lactic)
+  resids <- pull(data, taste) - fitted
+}
+
+get_resids <- Vectorize(get_resids, c('slope', 'intercept'), SIMPLIFY = FALSE)
+```
+
+Now we can add a column to our `MLE_grid` with the *residuals* for each row like this (change the code to use the predictor variable for your model). This will take a while to run. When it's done, look what has happened: each *row* of the dataset contains a *list* of 30 residuals! (Still totally cool.)
+
+```{r}
+MLE_grid <- MLE_grid %>%
+  mutate(resids = get_resids(slope, intercept, data = cheddar))
+glimpse(MLE_grid)
+```
+
+## Estimate the residual standard error
+
+To be able to get the likelihood from the residuals, we need to first estimate the residual standard error $\sigma$.
+
+```{r}
+MLE_grid <- MLE_grid %>%
+  mutate(sigma = sapply(resids, sd))
+glimpse(MLE_grid)
+```
+
+Once you've gotten this far, check in with the prof to let her know where you are and if you have any questions.
+
+## Compute the actual likelihood
+
+Finally, we are ready to compute the **likelihood of the dataset, given each proposed model (each "proposed model" is one set of candidate $\beta_0$, $\beta_1$, and $\sigma$).**
+
+For each row, we need to compute the **logarithm of the product of the normal density of a distribution with mean 0 and sd $\sigma$ at each residual value**. We will do the mathematical equivalent: find the **sum of the natural logarithms of the normal density at each residual value**.
+
+Another explanation (add your own additional detail if needed):
+
+- For each single residual, we find its likelihood by finding the density of a normal (mean = 0, standard deviation = $\sigma$) distribution for x = "our residual"
+- We take the natural log of each residual's likelihood
+- For each row of `MLE_grid` -- that is, for each proposed slope/intercept combination -- we add up all the residual log-likelihoods to get one joint log-likelihood for the whole dataset
+
+```{r}
+get_loglik <- function(resids, sigma){
+  LL <- sum(dnorm(resids, mean = 0, sd = sigma, log = TRUE))
+}
+
+get_loglik <- Vectorize(get_loglik, c('resids', 'sigma'), SIMPLIFY = TRUE)
+```
+
+Be patient, this will take a minute:
+
+```{r}
+MLE_grid <- MLE_grid %>%
+  mutate(log_likelihood = get_loglik(resids, sigma))
+```
+         
+
+```{r}
+glimpse(MLE_grid)
+```
+
+# Best Model?
+
+The BEST model (according to maximum likelihood estimation) is the one with the BIGGEST log-likelihood.  Which one is that?
+
+Use a plot to figure it out!
+
+*Note: Uncomment the code and run to see your plot, of course.*
+
+```{r}
+gf_point(log_likelihood ~ slope, data = MLE_grid) 
+```
+
+Why all the dots? Well, the intercept helps determine the likelihood, too...
+
+
+```{r}
+ gf_point(log_likelihood ~ slope, data = MLE_grid,
+         color = ~intercept) %>%
+  gf_lims( x = c(5, 20),
+           y = c(-200, -100))
+```
+
+OK, *kind of* helpful -- we can start to see where the highest values are...
+
+Making it interactive might help.
+
+
+```{r}
+library(plotly)
+# gf_point(log_likelihood ~ slope, data = MLE_grid,
+#          color = ~intercept) %>%
+#   ggplotly()
+```
+
+In the interactive plot, we can mouse over to find the exact slopes and intercepts that seem to have the highest likelihood.
+
+To find the absolute top ones, we can also `arrange()` the dataset in order of descending likelihood and check out the top entries:
+
+```{r}
+# MLE_grid %>%
+#   arrange(desc(log_likelihood)) %>%
+#   head()
+```
+
+
+# Comparison
+
+How do the slope and intercept that you just found compare with the one from `summary()` and `lm()`?
+
+(If we did everything right, they should be quite close! We only estimated to one decimal place, though.)
+
+# Comments?
+
+I am interested to know if your group found this exercise helpful -- as a team or individually, send me a Teams chat or email to let me know what was helpful/boring/confusing/awesome!
+
+# More time?
+
+If you still have more time, fit a new model with **two** predictors for this dataset, and then do model assessment or selection (your choice) together. *Just for practice, of course, because of the "night-science-y" way we did model planning...*

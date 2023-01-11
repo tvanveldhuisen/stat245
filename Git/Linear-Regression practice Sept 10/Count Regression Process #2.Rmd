@@ -1,0 +1,240 @@
+---
+title: "Count Regression Process"
+author: "STAT 245 - Oct 1"
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(tidyverse)
+require(mosaic)
+require(ggformula)
+knitr::opts_chunk$set(echo = TRUE, 
+                      fig.width = 7, 
+                      fig.height = 3,
+                      tidy = FALSE,
+                      fig.align = 'center', 
+                      message = FALSE, 
+                      warning = FALSE,
+                      error = TRUE,
+                      out.width = '60%', 
+                      dpi = 300)
+theme_set(theme_minimal(base_size = 22))
+```
+
+# Instructions
+
+The R code is code we used in the count data regression lessons earlier this week.  
+
+But all the explanations and notes are gone!
+
+## 1. What does it do?
+For each one, try to give a concise but specific explanation of what the code does and why you'd use it. For example, you might label code that creates and ACF plot, "Draw an ACF plot to check the residual independence condition"
+
+
+## 2. Do we *need* it?
+Then (there's more!) answer: would you *actually do* this as part of your modelling process, if you were using count data regression to analyze a dataset?
+
+(Some of the things we see in class are essential to the process; others we see along the way to help us understand the process better. Especially in this section.)
+
+## 3. Save this file!
+
+This annotated code may come in super useful for future assignments, tests, and future moments when a count data regression comes in handy.
+
+# Code: Count Data Regression Process
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+sscrime <- read_csv('https://sldr.netlify.app/data/sscrime.csv') %>%
+  mutate(Location = fct_relevel(Location, 'City', 'Town', 'Urban Fringe', 'Rural'))
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+gf_point(log(Thefts) ~ NEnrollment, 
+         data =sscrime)
+gf_boxplot(Thefts ~ Lockers | LockedGates,
+           data = sscrime) %>%
+  gf_jitter(color = 'grey44', alpha = 0.1)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+theft_pois <- glm(Thefts ~ NEnrollment + Location + 
+                 TrainingHours + SecurityCameras, 
+               data = sscrime,
+               family = poisson(link = 'log'))
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+summary(theft_pois)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+gf_point(Thefts ~ fitted(theft_pois), 
+         data = sscrime) %>%
+  gf_abline(intercept = 0, slope = 1)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+s245::gf_acf(~theft_pois)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+gf_point(resid(theft_pois, type = 'response') ~ 
+           fitted(theft_pois)) %>%
+  gf_labs(y = 'Response Residuals', x = 'Fitted Values')
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+gf_point(resid(theft_pois, type = 'pearson') ~ 
+           fitted(theft_pois)) %>%
+  gf_labs(y = 'Pearson Residuals', x = 'Fitted Values')
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+resid_mean_var <- sscrime %>%
+  mutate(preds = fitted(theft_pois),
+         resids = resid(theft_pois, type = 'response'),
+         pred_bins = cut(preds, 15)) %>%
+  group_by(pred_bins) %>%
+  summarize(mean_pred = mean(preds),
+            var_resid = var(resids))
+
+gf_point(var_resid ~ mean_pred,
+         data = resid_mean_var) %>%
+  gf_abline(intercept = 0, slope = 1)
+```
+
+## What the code below does
+
+*Note: slightly modified from your notes -- simpler/nicer graph -- but if you run it you should be able to figure out together what it is.*
+
+## Do we need it?
+
+```{r}
+require(DHARMa)
+pois_sim <- simulateResiduals(theft_pois)
+gf_point(pois_sim$scaledResiduals ~ fitted(theft_pois)) %>%
+  gf_labs(x = 'Predicted Thefts', y = 'Scaled Residuals')
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+require(glmmTMB)
+theft_nb1 <- glmmTMB(Thefts ~ NEnrollment + Location + 
+                 TrainingHours + SecurityCameras, 
+               data = sscrime,
+               family = nbinom1(link = 'log'))
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+theft_nb2 <- glmmTMB(Thefts ~ NEnrollment + Location + 
+                 TrainingHours + SecurityCameras, 
+               data = sscrime,
+           family = nbinom2(link='log'))
+```
+
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+summary(theft_nb1)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+AIC(theft_nb1, theft_nb2)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+AIC(theft_pois, theft_nb1, theft_nb2)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+nb2_sim <- simulateResiduals(theft_nb2)
+```
+
+## What the code below does
+*Note: again, a little different from the notes (in the same way). Can you make a note of what is different about this plot vs. the one from `plotResiduals()`?*
+
+## Do we need it?
+
+```{r}
+gf_point(nb2_sim$scaledResiduals ~ 
+           predict(theft_nb2)) %>%
+  gf_smooth(color = 'grey44') %>%
+  gf_labs(y = 'Scaled Resid.', x = 'Predicted Thefts')
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+s245::gf_acf(theft_nb2)
+```
+
+## What the code below does
+
+## Do we need it?
+
+```{r}
+gf_histogram(~resid(theft_nb2, type = 'response'))
+```
+
+## What is Missing?
+What else would we need to do/see to complete the modelling process and interpret our results? 

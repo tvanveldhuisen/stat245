@@ -1,0 +1,97 @@
+---
+title: "HDMA Housing Data"
+author: "Trevor VanVeldhuisen"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 6
+    fig_width: 9
+  html_document:
+    fig_height: 6
+    fig_width: 9
+  word_document:
+    fig_height: 6
+    fig_width: 9
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+```{r}
+hdma_mi <- read_csv('https://sldr.netlify.app/data/hdma-mi-20.csv') %>%
+  janitor::clean_names()
+```
+
+
+```{r}
+hdma_mi <- hdma_mi %>%
+  mutate(action_words = case_when(
+         action_taken == 1 ~ "Loan Originated",
+         action_taken == 2 ~ "Application approved but not accepted",
+         action_taken == 3 ~ "Application Denied",
+         action_taken == 4 ~ "Application Withdrawn by Applicant" ,
+         action_taken == 5 ~ "File Closed for Incompleteness",
+         action_taken == 6 ~ "Purchased Loan",
+         action_taken == 7 ~ "Preapproval request denied",
+         action_taken == 8 ~ "Preapproval request approvedbut not accepted"))
+```
+```{r}
+hdma_mi <- hdma_mi %>%
+  mutate(denial_reason_1 = case_when(
+    denial_reason_1 == 1 ~ "Debt-to-income ratio",
+    denial_reason_1 == 2 ~ "Employment History",
+    denial_reason_1 == 3 ~ "Credit History",
+    denial_reason_1 == 4 ~ "Collateral",
+    denial_reason_1 == 5 ~ "Insufficient Cash",
+    denial_reason_1 == 6 ~ "Unverifiable information",
+    denial_reason_1 == 7 ~ "Credit Application incomplete",
+    denial_reason_1 == 8 ~ "Mortgage Insurance Denied",
+    denial_reason_1 == 9 ~ "Other",
+    denial_reason_1 == 10 ~ "N/A"))
+```
+
+```{r}
+hdma_mi <- hdma_mi %>%
+  filter(denial_reason_1 %in% c("Debt-to-income ratio",
+                                "Employment History",
+                                "Credit History",
+                                "Collateral",
+                                "Insufficient Cash",
+                                "Unverifiable information",
+                                "Credit Application incomplete",
+                                "Mortgage Insurance Denied",
+                                "Other"))
+```
+
+
+
+```{r}
+gf_percentsh(~denial_reason_1 | ~derived_race, data = hdma_mi, size = 8, fill = ~derived_race) %>%
+  gf_labs( y = "Denial Reason",
+            x = "Percent") %>%
+  gf_theme(scale_fill_discrete('Derived Race')) +
+  facet_wrap(~derived_race) 
+```
+
+What we can see from these graphs is that the most common reasons for denial is debt-to-income ratio, credit history, and collateral. This seems to be the theme across all of the derived races.
+
+
+
+
+
+
+  

@@ -1,0 +1,274 @@
+---
+title: "Binary Regression Practice"
+author: "STAT 245"
+date: "10/22/2021"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+require(mosaic)
+require(ggformula)
+require(tidyverse)
+require(s245)
+require(DHARMa)
+knitr::opts_chunk$set(echo = TRUE, 
+                      error = TRUE,
+                      message = FALSE,
+                      fig.width = 8, fig.height = 4)
+
+theme_set(theme_minimal(base_size = 12))
+```
+
+## Data: Search Engine Manipulation Effect
+Your data are from [“The search engine manipulation effect (SEME) and its possible impact on the outcomes of elections” by Epstein and Robertson](https://www.pnas.org/content/112/33/E4512). They report results of experiments designed to measure the effects of biased internet search results on voter opinions. (You probably saw this before in VT assignments, but we'll use a different response variable this time!)
+
+The main variable of interest will be `Post_Choice`, which  reports which candidate the person would vote for at the end of the experiment. How do biased search results affect voter preferences?
+
+## Experiment
+The experiment placed American subjects in one of three groups. All subjects looked at internet search results related to an Australian election between candidates Abbot and Gillard (chosen so that most Americans would not have pre-existing views on the candidates). The `Group` variable tells whether their search results were:
+
+- biased in favor of Abbot, 
+- biased in favor of Gillard, or 
+- netural.
+
+Each participant reported at the end whether they trusted the search results they had see (variable `Trust_Search`).
+
+## Other Variables
+The data also includes many demographic variables: `Age`, `Sex`, `Race_Ethnicity`, `Marital_Status`, `Education`, `Employment_Status`, `Income`, and `Searches` (number of internet searches done per week in daily life).
+
+In addition, it provides political variables: `Party` affiliation, `Politics` (Conservative, Moderate, Liberal, None).
+
+Finally, the data includes `Pre_Vote`, which measures the initial preferred candidate before viewing any search results (closer to 0 = prefer Abbot, while closer to 10 = prefer Gillard).
+
+## Model Planning and Data Exploration
+Spend about 10 minutes to review the data tidying and graphics below. 
+
+- Do you think the data tidying choices made were good ones?
+  I think that re leveling some of the variables is a good move
+- Which variables would you include in a model to predict `Post_Choice`?
+  Some variables I would like to include is searches, party, and politics. I think those would have the greatest effect on which candidate to vote on. 
+
+```{r}
+searches <- read_csv('https://sldr.netlify.app/data/election_searches.csv') %>%
+  mutate(Race_Ethnicity = str_remove_all(Race_Ethnicity, '_NA'),
+         Race_Ethnicity = str_remove_all(Race_Ethnicity, 'NA_')) %>%
+  mutate(Race_Ethnicity = ifelse(grepl(pattern = '_', Race_Ethnicity), 
+                                 'Multiple', 
+                                 Race_Ethnicity)) %>%
+  filter(Education != 'Less than 9th grade' & Sex != 'Other')   %>% # remove as there are only very few
+  mutate(Income = fct_relevel(Income,
+                              "Under $10,000",
+                              "$10,000 to $14,999",
+                              "$15,000 to $19,999",
+                              "$20,000 to $29,999",
+                              "$30,000 to $39,999",
+                              "$40,000 to $49,999",
+                              "$50,000 to $74,999",
+                              "$75,000 to $99,999",
+                              "$100,000 to $149,999",
+                              "$150,000 and over",
+                              "I prefer not to say"),
+         Education = fct_relevel(Education,
+                                 "9th to 12th grade",
+                                 "High school graduate",
+                                 "Some college or associate degree",
+                                 "Bachelors", 
+                                 "Advanced" ),
+         Post_Choice = factor(Post_Choice),
+         Post_Choice = fct_relevel(Post_Choice, "Tony Abbott", "Julia Gillard"))  
+```
+```{r}
+glimpse(searches)
+```
+
+
+```{r}
+gf_props(~Group, fill = ~Post_Choice, data = searches, denom = ~x)
+```
+
+```{r}
+gf_props(~Group| Pre_Choice, fill = ~Post_Choice , 
+         denom = ~interaction(x,PANEL),
+         data = searches)
+```
+
+```{r}
+gf_props(~Group| Race_Ethnicity, fill = ~Post_Choice,
+         denom = ~interaction(x, PANEL),
+         data = searches)
+```
+
+```{r}
+gf_props(~Group| Trust_Search, fill = ~Post_Choice,
+         denom = ~interaction(x, PANEL),
+         data = searches)
+```
+
+```{r}
+gf_props(~Group| Politics, fill = ~Post_Choice,
+         denom = ~interaction(x, PANEL),
+         data = searches)
+```
+
+```{r}
+politics <- searches %>%
+  group_by(Politics, Group) %>%
+  summarize(prop_Gillard = prop(~Post_Choice == 'Julia Gillard'),
+            n = n())
+
+gf_point(fct_reorder(Politics, prop_Gillard) ~ prop_Gillard,
+         color = ~Group, size = ~n,
+         data = politics) %>%
+  gf_lims(x = c(0,1)) %>%
+  gf_vline(xintercept = 0.5)
+```
+
+```{r}
+gf_props(~Group| Income, fill = ~Post_Choice,
+         denom = ~interaction(x, PANEL),
+         data = searches)
+```
+
+
+```{r}
+gf_boxplot(Age ~ Post_Choice | Group, data = searches) 
+```
+
+```{r}
+age_groups <- searches %>%
+  mutate(binned_age = cut_number(Age, 10)) %>%
+  group_by(binned_age, Group) %>%
+  summarize(prop_Gillard = prop(~Post_Choice == "Julia Gillard"),
+            median_age = median(~Age))
+
+
+gf_point(prop_Gillard ~ median_age | Group, data = age_groups)
+gf_point(logit(prop_Gillard) ~ median_age | Group, data = age_groups)
+  
+```
+
+## Model Fitting and Link Function
+
+Choose predictors and model family/link function, to predict **the probability a person will vote for Gillard after their internet searching**.
+
+Note if we don't include an interaction of `Group` with each predictor of interest, we won't really be able to make sense of the results in terms of "effect of that factor on susceptibility to biased search". The main effect only tells about "preference for Gillard over Abbott regardless of whether biased search results were viewed"!
+
+```{r}
+vote_mod <- glm(Post_Choice ~ Party + Politics + Pre_Vote, data = searches,
+                 family = binomial(link = 'logit'))
+```
+
+## Model Assessment
+
+With your group, answer:
+
+- which graph(s) checks which condition(s),
+- whether you think each condition is met, and 
+- why?
+
+Conditions are:
+
+- Linearity (already did in exploration - yay!)
+- Independence of residuals
+- Mean-variance relationship is as expected
+
+```{r}
+gf_acf(~vote_mod)
+```
+
+```{r}
+vote_sim <- simulateResiduals(vote_mod)
+
+gf_point(vote_sim$scaledResiduals ~ fitted(vote_mod)) %>%
+  gf_labs(x = "Predicted Probability\nto Vote Gillard",
+          y = 'Scaled Residuals')
+```
+
+## Model Selection
+Carry out model selection (method of your choice). What do you conclude?
+
+## Prediction Plots
+Make prediction plots for all predictors where you have evidence of an association with the predictor and response.
+
+### Non-interaction example (shortcut):
+
+First, check what the "fixed values" are going to be for predictors not shown in the plot. the `s245` package uses the most frequently observed level for categorical predictors, and the median for quantitative ones.  So for our model:
+
+```{r}
+get_fixed(vote_mod)
+```
+
+Making the plots (example):
+
+```{r}
+pred_plot(vote_mod, 'Politics') %>%
+  gf_labs(y = 'Predicted Prob.\nVote Gillard')
+```
+
+### Interaction example (by hand; *two* variables vary)
+
+**Modify as needed to show the two variables of your choice.** *Note: example is for 2 categorical predictors interacting; if one was quantitative, you would need to use `seq()` to define a range of values to give to `expand.grid()`, and later use `gf_ribbon()` instead of `gf_errorbar()`.*
+
+Note that we can still do this, even if our variables *don't* have a significant interaction, but *we want to show how both affect the response all on the same plot*.
+
+```{r}
+# note: "chr" variables have unique() values, "fct" variables have level()s
+hyp_data <- expand.grid(Group = pull(searches, Group) %>% unique(),
+                        Pre_Choice = pull(searches, Pre_Choice) %>% factor() %>% levels(),
+                        Politics = "Liberal",
+                        Age = 31)
+
+# compute predictions with SEs
+predix <- predict(vote_mod, 
+                  newdata = hyp_data,
+                  type = 'link',
+                  se.fit = TRUE)
+
+glimpse(predix)
+```
+
+```{r}
+# add predicted values and CIs to the hypothetical dataset
+hyp_data <- hyp_data %>%
+  mutate(link_pred = predix$fit,
+         link_CI_low = predix$fit - 1.96 * predix$se.fit,
+         link_CI_hi = predix$fit + 1.96 * predix$se.fit,
+         # inverse-logit-transform all variable starting with "link_"
+         across(starts_with("link_"), ilogit))
+```
+
+
+Finally, create the plot:
+
+```{r}
+gf_point(pred ~ Group | Pre_Choice,
+         data = hyp_data) %>%
+  gf_errorbar(CI_low + CI_hi ~ Group | Pre_Choice) %>%
+  gf_lims(y = c(0,1))
+```
+
+## Conclusions
+
+**We should now be able to answer:**
+
+Which variables have strong effects on voter choices?
+
+Does the search result bias matter and if so, what's it's effect?
+
+If people realize the search results are fishy, are they less swayed?
+
+Does this say anything about political polarization in the USA?
+
+*Because we "peeked" at the data to decide which variables to include in our model, the CIs and p-values on our model selection and prediction plots are only approximate, and may be biased small/narrow. (Sad but true.) And remember - conclusions only hold if conditions were all met - were they?*
+
+**This probably wraps up our engagement with this dataset -- hope you enjoyed it and learned a little about data + politics as well as regression modelling!**
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

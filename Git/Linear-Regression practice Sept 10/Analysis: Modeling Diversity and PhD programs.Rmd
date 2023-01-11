@@ -1,0 +1,128 @@
+---
+title: "Stat 245: Modeling Diversity and PhD programs"
+author: "Trevor VanVeldhuisen"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+```{r}
+pi <- read_csv('https://sldr.netlify.app/data/phd_innovation.csv')
+```
+
+For this data set I will be looking at novelty, which is a measure of innovation and the proportion of same race. The response variable of interest is novelty, while the predictor variable is prop_same_race
+
+```{r}
+slr <- lm(novelty ~ prop_same_race, data = pi)
+```
+
+```{r}
+gf_point(novelty ~ prop_same_race, data = pi) %>%
+  gf_lm()
+```
+
+This model I chose to see if there was a relationship on a satter plot between novelty and prop_same_race. As we can see from the graph and the coefficients below, there is a relationship.
+
+```{r}
+coef(slr)
+```
+
+```{r}
+gf_boxplot(sex ~ novelty, data = pi)
+```
+
+For this box plot, I wanted to see if there was a difference in novelty between the two sexes. As we observe from the boxplot, the medians and both quartiles are similar if not the same, with just some variation in the outliers. This shows that novelty does not tend to be greater in either one sex.
+
+```{r}
+pi <- pi %>%
+  mutate(pred = predict(slr))
+```
+
+```{r}
+pi_simple <- pi %>%
+  select(prop_same_race, novelty) %>%
+  mutate(preds = predict(slr))
+```
+
+```{r}
+pi <- pi %>%
+  select(prop_same_race) %>%
+  na.omit() %>%
+  mutate (pred = predict (slr))
+```
+
+```{r}
+fake_data <- expand.grid(prop_same_race = seq(from = 0,
+                                              to = 1,
+                                              by = 0.1))
+fake_data <- fake_data %>%
+  mutate(pred = predict(slr, newdata = fake_data)) 
+glimpse(fake_data)
+```
+
+```{r}
+gf_line(pred ~ prop_same_race, data = fake_data)
+```
+
+```{r}
+preds <- predict(slr, newdata = fake_data, se.fit = TRUE)
+glimpse(preds)
+```
+
+
+```{r}
+fake_data <- fake_data %>%
+  mutate(pred = preds$fit,
+         pred.se = preds$se.fit)
+```
+
+```{r}
+fake_data <- fake_data %>%
+ mutate(CI_lower = pred - 1.96*pred.se,
+ CI_upper = pred + 1.96*pred.se)
+glimpse(fake_data)
+```
+
+```{r}
+gf_line(pred ~ prop_same_race,
+        data = fake_data) %>%
+  gf_labs(y = 'Predicted Novelty',
+          x = 'Proportion Same Race') %>%
+  gf_ribbon(CI_lower + CI_upper ~ prop_same_race)
+```
+
+Looking at this model, it shows a negative correlation between novelty and the proportion of the same race. From this data we can conclude that a more diverse group tends to be more innovative and ranks higher in novelty. Just the regression line was not enough, and to account for residual error, I incorporated confidence intervals at 95% as shown with the ribbons. This reinforces the conclusion of the graph, as the ribbons downtrend as well. 
+
+
+
+
+
+
+
+
+  

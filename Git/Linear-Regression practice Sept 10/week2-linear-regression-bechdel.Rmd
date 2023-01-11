@@ -1,0 +1,223 @@
+---
+title: 'Case Study: The Bechdel Test'
+author: "Jonathan VanOyen, Trevor VanVeldhuisen, Jose Hernandez"
+date: "9/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggformula)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup
+
+Assign roles in your group:
+
+- Manager. Keep group on task. Act as main spokesperson if Prof drops in with questions.
+- Time keeper. Try to budget time to complete tasks. (If needed, one person can be Manager and Time Keeper.)
+- Inclusion monitor. Make sure everyone is included in the process. Speak up and ask for input from those who keep quiet.
+- R Typist. Main editor of your group Rmd file (may want to share their screen so all can see; or can create a shared project)
+- Graphics Reference. Have graphics tutorials open for code reference and ideas. (If needed, one person can be graphics and format.)
+- Format Police. Make sure the Rmd file has titled sections and watch for typos in text
+
+If you run out of people before you run out of jobs, some people can take multiple roles.
+
+## Data
+
+The dataset is available in the `fivethirtyeight` R package, and is called `bechdel`.
+
+It is discussed in a FiveThirtyEight.com [article about women in Hollywood](https://fivethirtyeight.com/features/the-dollar-and-cents-case-against-hollywoods-exclusion-of-women/).
+
+It is a play on the Bechdel Test, a measure of womens' role in a film from a 1985 comic by Alison Bechdel:
+
+```{r, echo = FALSE, out.width = '60%'}
+knitr::include_graphics('https://dykestowatchoutfor.com/wp-content/uploads/2014/05/The-Rule-cleaned-up.jpg')
+```
+
+(of course, [this is *not* a perfect test](https://www.theverge.com/2017/12/22/16807424/alternatives-bechdel-test-bad-moms-lena-waithe).)
+
+To load the dataset and read details about it, run:
+
+```{r}
+library(fivethirtyeight)
+?bechdel
+```
+
+Before analysis, we will limit the data to the years 1990 - 2013, since the dataset creators say "the data has significantly more depth since then". 
+
+```{r}
+bechdel_13 <- bechdel %>%
+  filter(year >= 1990 & year <= 2013) 
+```
+
+(So from now on, we will use the "since 2013" dataset, `bechdel_13`.)
+
+We can also add a few additional variables to the data set.
+
+- `roi` Total **r**eturn **o**n **i**nvestment (gross earnings divided by total budget)
+- `profit` International gross minus budget
+
+```{r}
+bechdel_13 <- bechdel_13 %>%
+    mutate(roi = intgross_2013 / budget_2013,
+         profit = intgross_2013 - budget_2013)
+```
+
+Finally, adjust the format of the `clean_test` variable to make it easier to use. Keep the ordering of the categories, but do not assume they are equally spaced. (This is a bit of a technicality that you won't normally need to worry about.)
+
+```{r}
+bechdel_13 <- bechdel_13 %>%
+  mutate(clean_test = factor(as.character(clean_test)),
+         clean_test = forcats::fct_relevel(clean_test,
+                                           'ok',
+                                           'dubious',
+                                           'men',
+                                           'notalk',
+                                           'nowomen'))
+```
+
+'''
+```{r}
+gf_point(test ~ profit,
+         data = bechdel_13,
+         color = ~ year)
+```
+
+```{r}
+gf_point(profit ~ clean_test,
+         size = ~ binary,
+         data = bechdel_13)
+```
+
+```{r}
+glimpse(bechdel_13)
+```
+
+```{r}
+mod <- lm(profit ~ clean_test, data = bechdel_13) 
+  
+```
+
+
+```{r}
+gf_point(profit ~ budget, data = bechdel_13) %>%
+    gf_lm()
+```
+```{r}
+slr <- lm(profit ~ budget + clean_test, data = bechdel_13)
+```
+
+```{r}
+b2 <- bechdel_13 %>%
+  select(profit, budget, clean_test) %>%
+  na.omit()%>%
+  mutate(preds = predict(slr))
+```
+
+```{r}
+b2 <- b2 %>%
+  mutate(pred = predict(slr))
+```
+
+```{r}
+b2_simple <- b2 %>%
+  select(profit, budget, clean_test) %>%
+  mutate(preds = predict(slr))
+```
+
+```{r}
+b2 <- b2 %>%
+  select(budget) %>%
+  na.omit() %>%
+  mutate (pred = predict (slr))
+```
+
+```{r}
+fake_data <- expand.grid(budget = seq(from = 0,
+                                              by = 100000000,
+                                              to = 1000000000),
+                         clean_test = c('notalk', 'ok', 'dubious', 'men', 'nowomen'))
+fake_data <- fake_data %>%
+  mutate(pred = predict(slr, newdata = fake_data))
+glimpse(fake_data)
+```
+
+```{r}
+gf_line(pred ~ budget, color = ~clean_test, data = fake_data)
+```
+
+```{r}
+preds <- predict(slr, newdata = fake_data, se.fit = TRUE)
+glimpse(preds)
+```
+
+```{r}
+fake_data <- fake_data %>%
+  mutate(pred = preds$fit,
+         pred.se = preds$se.fit)
+```
+
+```{r}
+fake_data <- fake_data %>%
+ mutate(CI_lower = pred - 1.96*pred.se,
+ CI_upper = pred + 1.96*pred.se)
+glimpse(fake_data)
+```
+
+```{r}
+gf_line(pred ~ budget,color = ~clean_test,
+        data = fake_data) %>%
+  gf_labs(y = 'Predicted Profit',
+          x = 'Budget') %>%
+  gf_ribbon(CI_lower + CI_upper ~ budget)
+```
+
+```{r}
+t.test(b2, conf.level = 0.95)
+```
+```{r}
+gf_point(profit ~ budget, data = bechdel_13) %>%
+    gf_lm()
+```
+```{r}
+slr <- lm(profit ~ budget + year, data = bechdel_13)
+```
+
+```{r}
+b2 <- bechdel_13 %>%
+  select(profit, budget, year) %>%
+  na.omit()%>%
+  mutate(preds = predict(slr))
+```
+
+```{r}
+b2 <- b2 %>%
+  mutate(pred = predict(slr))
+```
+
+```{r}
+b2_simple <- b2 %>%
+  select(profit, budget, year) %>%
+  mutate(preds = predict(slr))
+```
+
+```{r}
+b2 <- b2 %>%
+  select(budget) %>%
+  na.omit() %>%
+  mutate (pred = predict (slr))
+```
+
+```{r}
+fake_data <- expand.grid(budget = seq(from = 0,
+                                              by = 100000000,
+                                              to = 1000000000),
+                         year = c('2012', '2013'))
+fake_data <- fake_data %>%
+  mutate(pred = predict(slr, newdata = fake_data))
+glimpse(fake_data)
+```
+
+

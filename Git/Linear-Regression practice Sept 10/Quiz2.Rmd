@@ -1,0 +1,59 @@
+---
+title: 'Case Study: The Bechdel Test'
+author: "Jonathan VanOyen, Trevor VanVeldhuisen, Jose Hernandez"
+date: "9/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggformula)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggformula)
+library(tidyverse)
+bee_reproduction <- read.csv('https://sldr.netlify.app/data/bee-reproduction.csv')
+```
+
+```{r}
+slr <- lm(aggression ~ defense, data=bee_reproduction)
+coef(slr)
+gf_point(aggression ~ defense, data=bee_reproduction) %>%
+  gf_lm()
+summary(slr)
+```
+```{r}
+blubbermass <- read.csv('https://sldr.netlify.app/data/BelugaBlubber.csv')
+glimpse(blubbermass)
+```
+
+```{r}
+slr <- lm(BlubberMass1.kg ~ MeanBlubberMass2.kg, data=blubbermass)
+coef(slr)
+```
+
+
+```{r}
+gf_point(BlubberMass1.kg ~ MeanBlubberMass2.kg, data=blubbermass) %>%
+  gf_lm()
+summary(slr)
+```
+
+```{r}
+baseball <- read.csv('https://sldr.netlify.app/data/baseball.csv')
+slr <- lm(Home.runs.per.at.bat ~ Strikeouts.per.at.bat, data=baseball)
+coef(slr)
+summary(slr)
+```
+
+
+```{r}
+athlete <- read.csv('https://sldr.netlify.app/data/athlete_events.csv')
+slr <- lm(Height ~ Year, data=athlete)
+coef(slr)
+summary(slr)
+```
+```
+

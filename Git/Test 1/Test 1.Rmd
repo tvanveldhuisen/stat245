@@ -1,0 +1,151 @@
+---
+title: "Test 1, Stat 245"
+author: "Trevor VanVeldhuisen"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+```{r}
+gratitude <- read_csv('https://sldr.netlify.app/data/gratitude-experiment.csv')
+```
+
+```{r}
+glimpse(gratitude)
+```
+
+The predictor variable will be the 3-level group (gratitude, hassles, events as the control group) while the response variable is the gratitude score. Each group in the study was given a different task to do each week, and the goal of that study was to see if there is an association between the group assignment and the overall gratitude score. While the overall goal is to see if there is an association between group and gratitude score, I also added in the predictor variable life rating because I believe life rating would be another predictor in addition to group that would predict gratitude score. The data set was 196 rows of data and there were three categories in my main predictor so I thought including more than adding more predictor variables could have a negative effect the ability to fit the model. There was nothing in the background that stated these variables were important and were not included in the primary research question. 
+
+```{r}
+gf_boxplot(gratitude_score ~ group , data = gratitude) %>%
+  gf_labs(y = 'Gratitude Score',
+          x = 'Group')
+```
+
+This graph shows the distribution of gratitude score for each group. From this boxplot we can see that the gratitude group has a higher median of gratitude score than the events group as the control group. The hassles group has a pretty similar median gratitude score to the control group.
+
+```{r}
+mlr3 <- lm(gratitude_score ~ group + life_rating, data = gratitude)
+```
+
+```{r}
+summary(mlr3)
+```
+
+Mathematical Equation: gratitude_score = 7.5188 + 0.9397groupgratitude -0.5188grouphassles + 0.4352life_rating + E
+groupgratitude{1 if in group_gratitude); 0 otherwise}
+group_hassles{1 if in group_hassles; 0 otherwise}
+life_rating is a continuous variable
+E ~ N(0, 1.896)
+
+The adjusted R-squared = 0.1175. R-squared tells us how well the model fits the data and how much variability the model explains. Since R-squared is low, the data does not fit the data well. 
+
+```{r}
+gratitude <- gratitude %>%
+  mutate(resid = resid(mlr3),
+         pred = predict(mlr3))
+```
+
+
+```{r}
+gf_point(resid ~ pred, data = gratitude) %>%
+  gf_labs(title = 'Constant Residual Variance',
+       x = 'Predictors',
+          y = 'Residuals') %>%
+  gf_lm()
+```
+
+The constant residual variance test does not seem to trumpet out. There is no pattern to this and the points seem evenly scattered around a mean of zero, so there is constant variance. 
+
+```{r}
+s245::gf_acf(~mlr3) %>%
+  gf_lims(y = c(-1,1)) %>%
+  gf_labs(title = 'Independence of Residuals')
+```
+
+This graph helps show the independence of the residuals, and the values of the residual autocorrelation function stay within the confidence intervals. This means the evidence is consistent with the residuals being independent. 
+
+
+```{r}
+g2 <- gratitude %>%
+  select(gratitude_score, group, life_rating) %>%
+  na.omit() %>%
+  mutate(preds = predict(mlr3))
+```
+
+
+```{r}
+fake_data <- expand.grid(life_rating = seq(from = 0,
+                                           by = 1,
+                                           to = 8),
+                         group = 'gratitude')
+```
+
+```{r}
+fake_data <- fake_data %>%
+  mutate(pred = predict (mlr3, newdata = fake_data))
+```
+
+```{r}
+preds <- predict(mlr3, newdata = fake_data, se.fit = TRUE)
+```
+
+```{r}
+fake_data <- fake_data %>%
+  mutate(pred = preds$fit,
+         pred.se = preds$se.fit)
+```
+
+```{r}
+fake_data <- fake_data %>%
+  mutate(CI_lower = pred - 1.96*pred.se,
+         CI_upper = pred + 1.96*pred.se)
+glimpse(fake_data)
+```
+
+```{r}
+gf_line(pred ~ life_rating, data = fake_data) %>%
+  gf_ribbon(CI_lower + CI_upper ~ life_rating) %>%
+  gf_labs( y = 'Predicted Gratitude Score',
+           x = 'Life Rating')
+```
+
+```{r}
+summary(lm(gratitude_score ~ life_rating, data = gratitude))
+```
+
+
+
+Interpretation and Conclusion:
+
+First, looking at the box plot, we see that the distribution of the gratitude score is higher in the gratitude group than the hassles and events group. Based on fitting the multiple regression model that included the predictors of group (gratitude, hassles, and events as the control group) and life rating and predicting gratitude score, group gratitude was a statistically significant predictor compared to the control group (p-value of 0.00622). To interpret the estimate, if a participant is in the gratitude group, then the gratitude score is predicted to be 0.9397 higher compared to the events group. Life rating is also a significant predictor of gratitude score, and for every life rating increase by 1 for a participant, we predict an increase in gratitude score by 0.4352 (p-value = 0.01461). Group hassles is not significantly different than control group events (p-value= 0.12131). The adjusted r-squared of the multiple regression model was 0.11, which means that the variables in the model do not fit the data well. Based on examining graphs, there is no evidence that the assumptions of the multiple regression model are violated for the independence test of the error terms and lack of non-linearity for the residuals against the predictors. For the sake of this analysis, I am going to assume it passes the distribution of residuals and the error variance constant tests. The prediction plot shows a good linear relationship with the predicted values of the gratitude score and the life rating predictor which is consistent with the results we saw in the analysis from the multiple regression model. In summary, our analysis answered the research question that there is an association between gratitude score and gratitude group when compared to the control (events) group, but hassles relative to the control group, is not associated with gratitude score. 
+
+
+
+
+  

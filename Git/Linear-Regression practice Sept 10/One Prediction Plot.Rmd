@@ -1,0 +1,82 @@
+---
+title: "Predicted One-Variable"
+author: "jnv23"
+date: "10/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(mosaic)
+library(glmmTMB)
+knitr::opts_chunk$set(echo = TRUE)
+theme_set(theme_minimal(base_size = 14))
+```
+
+```{r, message = FALSE}
+sscrime <- read_csv('https://sldr.netlify.app/data/sscrime.csv') %>%
+  mutate(Location = fct_relevel(Location, 'City', 'Town', 'Urban Fringe', 'Rural'))
+
+theft_nb2 <- glmmTMB(Thefts ~ NEnrollment * Location + 
+                 TrainingHours + SecurityCameras, 
+               data = sscrime,
+           family = nbinom2(link='log'))
+```
+
+
+We will make a prediction plot for the Security Cameras variable.
+
+
+```{r}
+hyp_data <- expand.grid(SecurityCameras = unique(pull(sscrime, SecurityCameras)),
+                        Location = 'Town',
+                        TrainingHours = median(~TrainingHours, data = sscrime),
+                        NEnrollment = median(~NEnrollment, data = sscrime))
+```
+
+```{r}
+glimpse(hyp_data)
+```
+
+
+```{r}
+predix <- predict(theft_nb2, 
+                  newdata = hyp_data,
+                  se.fit = TRUE,
+                  type = 'link' # this means: on scale of RHS of eqn
+                  )
+
+hyp_data <- hyp_data %>%
+  # units of these variables are log(thefts)
+  mutate(link_pred = predix$fit,
+         link_se = predix$se.fit,
+         link_CI_lo = link_pred - 1.96 * link_se,
+         link_CI_up = link_pred + 1.96 * link_se
+         )
+```
+
+We want to convert from the "link" scale (log(Thefts)) to the "response" scale (Thefts). We will use function `exp()` to exponentiate.
+
+```{r}
+hyp_data <- hyp_data %>%
+  mutate(pred = exp(link_pred),
+         CI_lo = exp(link_CI_lo),
+         CI_up = exp(link_CI_up))
+
+glimpse(hyp_data)
+```
+
+
+```{r}
+gf_point(pred ~ SecurityCameras, 
+         data = hyp_data,
+         size = 3) %>%
+  gf_errorbar(CI_lo + CI_up ~ SecurityCameras,
+              width = 0.2) %>%
+  gf_labs(x = 'Security Cameras?',
+          y = 'Predicted Thefts')
+```
+
+
+Can you make a prediction plot for the interacting variables? Use the model above, but you'll need to allow *both* interacting variables to vary, and show *both* in your plot.
+

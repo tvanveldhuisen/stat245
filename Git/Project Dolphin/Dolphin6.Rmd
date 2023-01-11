@@ -1,0 +1,216 @@
+---
+title: "Dolphin 11606"
+author: ""
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  pdf_document:
+    fig_height: 2.2
+    fig_width: 4
+  html_document:
+    fig_height: 2.2
+    fig_width: 4
+  word_document:
+    fig_height: 2.2
+    fig_width: 4
+---
+
+```{r, setup, include = FALSE}
+# load packages that are going to be used
+require(tidyverse)   # this loads mosaic, ggformula, etc. too
+require(ggformula)
+require(mosaic)
+require(glmmTMB)
+require(s245)
+require(ggeffects)
+
+# Some customization.  You can alter or delete as desired (if you know what you are doing).
+
+theme_set(theme_bw(base_size=12))     # change theme for ggplot2/ggformula
+
+knitr::opts_chunk$set(
+  echo = TRUE,      # for homework, always show R code (this is the default)
+  tidy = FALSE,     # display code as typed (rather than reformatted)
+  size = "small",   # slightly smaller font for code
+  message = FALSE, warning = FALSE) # don't print warnings or messages in compiled document. So you MUST check them in RStudio!
+```
+
+
+```{r}
+Dolphin6 <- read.csv('110606-Behavior_QC.csv', na.strings = c('', ' ', 'NA'))
+glimpse(Dolphin6)
+```
+
+
+```{r}
+wide_dolph_dives <- Dolphin6 %>%
+  pivot_wider(names_from = What,
+              # variables listed in values_from are ones you want to keep/use 
+              # that are DIFFERENT for dive and surfacing
+              values_from = c(X, Number, Shape, DepthMin, DepthMax, DurationMin, DurationMax,
+                              Count, Shallow, Deep, Start, End, start, end, t.diff, flag,
+                              depth, duration)
+  ) %>%
+  # remove variables that are all NA
+  janitor::remove_empty(which = 'cols') %>%
+  # make datetime variables datetime objects - will be easier for plotting
+  mutate(across(Start_Dive:end_Surface, lubridate::mdy_hm))
+glimpse(wide_dolph_dives)
+```
+
+
+Look to see if surface duration changes before or after different dive durations or dive depths
+Variables:DurationMax_Surface, DurationMax_Dive, depth_Dive
+
+
+
+
+
+
+Looking at the distribution of dive depths and duration
+
+
+```{r}
+gf_point(depth_Dive ~ duration_Dive, 
+ data = wide_dolph_dives) %>%
+ gf_lm()
+```
+
+```{r}
+dives.lm <- lm(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives)
+summary(dives.lm)
+```
+
+
+```{r}
+cluster_data <- wide_dolph_dives %>%
+  select(depth_Dive, duration_Dive) %>%
+  mutate(depth=scale(depth_Dive),
+         duration=scale(duration_Dive))
+```
+
+```{r}
+c_out <-cluster::clara(cluster_data, k=2, metric = c("euclidean"))
+glimpse(c_out)
+
+```
+
+
+
+```{r}
+wide_dolph_dives <- wide_dolph_dives %>%
+  mutate(dtype=c_out$clustering)
+glimpse(wide_dolph_dives)
+```
+
+
+```{r}
+wide_dolph_dives = wide_dolph_dives %>%
+mutate(dtype = case_when(dtype == 1 ~ 'deep',
+dtype == 2 ~ 'shallow'))
+```
+
+This graph is looking at the distribution of dive depths and duration.  
+ Below we see that as duration increases, so does depth.  The dive points between duration of 0 to 200 the depth of the dive don't increase in depth as much as the rest of the dives; this is show in the colors on the graph.  
+```{r}
+gf_point(depth_Dive ~ duration_Dive,
+ data = wide_dolph_dives,
+ color= ~dtype) %>% 
+  gf_labs(x = 'Dive Duration',
+          y = 'Dive Depth') %>%
+ gf_lm() %>%
+   gf_theme(scale_color_discrete('Dive Type'))
+
+```
+
+```{r}
+gf_point(DurationMax_Surface ~ depth_Dive, data = wide_dolph_dives, color = ~dtype) %>%
+  gf_lm() %>%
+  gf_labs( x = 'Dive Depth',
+           y = 'Surface Duration') %>%
+  gf_theme(scale_color_discrete('Dive Type'))
+```
+  
+Looking at this graph there does not seem to be a correlation between time at the surface and the depth of the dive. There are a few outliers, but the majority stay at the bottom and do not spend as much time on the surface for deeper dives. 
+```{r}
+gf_point(duration_Surface ~ duration_Dive, data = wide_dolph_dives, color = ~dtype) %>%
+  gf_labs( x = 'Dive Duration',
+           y = 'Surface Duration') %>%
+   gf_theme(scale_color_discrete('Dive Type'))
+```
+  
+  Analyzing this graph, there does not seem to be a correlation between Surface Duration and Dive Duration. 
+  
+```{r}
+dolphdive <- glmmTMB(duration_Surface ~ duration_Dive + Shallow_Surface + Deep_Surface + (1| start_Dive), data = wide_dolph_dives, family = Gamma(link='log')) 
+summary(dolphdive)
+```
+  
+```{r}
+conditions <- wide_dolph_dives %>%
+  mutate(preds = predict (dolphdive),
+         resids = resid (dolphdive))
+```
+```{r}
+gf_histogram( ~resids, data = conditions, bins = 100)
+```
+```{r}
+gf_qq(~resids, data = conditions) %>%
+  gf_qqline()
+```
+
+  
+```{r}
+gf_point(resids ~ preds, data = conditions) %>%
+  gf_labs( x = 'Predictors',
+           y = 'Residuals')
+```
+```{r}
+s245::gf_acf(~dolphdive) %>%
+  gf_lims(y = c(-1,1))
+```
+  
+```{r}
+d2 <- wide_dolph_dives %>%
+  select(duration_Dive, duration_Surface, Shallow_Surface, Deep_Surface,) %>%
+  na.omit() %>%
+  mutate(preds = predict(dolphdive))
+```
+
+
+
+```{r}
+gf_point(preds ~ duration_Dive, data = d2) %>%
+  gf_line()
+```
+
+
+```{r}
+ggpredict(dolphdive,
+          terms = c('duration_Dive',
+                    'Shallow_Surface [1]',
+                    'Deep_Surface [0]'),
+          type = 'fixed') %>%
+  plot() %>%
+  gf_labs(y = 'Predicted Duration on Surface',
+          x = 'Dive Duration')
+```
+
+```{r}
+gf_boxplot(duration_Dive ~ Shallow_Surface, data = wide_dolph_dives)
+```
+
+```{r}
+gf_boxplot(duration_Dive ~ dtype, data = wide_dolph_dives)
+```
+
+```{r}
+dolphdive <- glmmTMB(duration_Surface ~ depth_Dive + Shallow_Surface + Deep_Surface + (1| start_Dive), data = wide_dolph_dives, family = Gamma(link='log')) 
+summary(dolphdive)
+```
+
+```{r}
+gf_boxplot(duration_Surface ~ dtype, data = wide_dolph_dives)
+```
+
+  

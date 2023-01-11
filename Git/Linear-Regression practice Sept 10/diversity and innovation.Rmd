@@ -1,0 +1,38 @@
+---
+title: "Diversity and Innovation"
+author: "jnv23"
+date: "9/14/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(ggformula)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=5}
+
+pi <- read.csv('https://sldr.netlify.app/data/phd_innovation.csv')
+gf_point(novelty ~ prop_same_sex,
+        data = pi,
+        color = ~ field) %>%
+  gf_theme(scale_fill_continuous('Field')) %>%
+gf_point(novelty ~ prop_same_sex,) %>%
+ gf_lims(x = c(0.5, 0.85)) %>%
+  gf_labs(title = "Do Fields with Gender Dominance Affect Innovation?",
+  subtitle = "",
+  caption = "",
+  x = "Proportions of Same Sex (higher means more gender dominance) ",
+  y = "Novelty Rating")
+
+```
+
+
+
+
+
+
+
